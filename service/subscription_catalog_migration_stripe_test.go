@@ -98,6 +98,30 @@ func (f *fakeCatalogMigrationStripeProvider) ReleaseSchedule(_ context.Context, 
 	return &stripe.SubscriptionSchedule{ID: id, Status: stripe.SubscriptionScheduleStatusReleased}, nil
 }
 
+func TestCatalogMigrationNextMonthlyPeriodEndClampsToMonthEnd(t *testing.T) {
+	cases := []struct {
+		name string
+		from string
+		want string
+	}{
+		{name: "jan 31 -> feb 28", from: "2026-01-31T10:20:30Z", want: "2026-02-28T10:20:30Z"},
+		{name: "mar 31 -> apr 30", from: "2026-03-31T00:00:00Z", want: "2026-04-30T00:00:00Z"},
+		{name: "may 31 -> jun 30", from: "2026-05-31T23:59:59Z", want: "2026-06-30T23:59:59Z"},
+		{name: "jan 15 -> feb 15", from: "2026-01-15T08:00:00Z", want: "2026-02-15T08:00:00Z"},
+		{name: "dec 31 -> jan 31", from: "2026-12-31T12:00:00Z", want: "2027-01-31T12:00:00Z"},
+		{name: "leap jan 31 -> feb 29", from: "2028-01-31T12:00:00Z", want: "2028-02-29T12:00:00Z"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			from, err := time.Parse(time.RFC3339, tc.from)
+			require.NoError(t, err)
+			want, err := time.Parse(time.RFC3339, tc.want)
+			require.NoError(t, err)
+			require.Equal(t, want.Unix(), catalogMigrationNextMonthlyPeriodEnd(from.Unix()))
+		})
+	}
+}
+
 func TestStripeCatalogMigrationSchedulerBuildsExactOwnedTwoPhaseSchedule(t *testing.T) {
 	scheduler, provider, request := setupStripeCatalogMigrationSchedulerTest(t)
 	result, err := scheduler.ScheduleCatalogMigration(context.Background(), request)
@@ -115,7 +139,7 @@ func TestStripeCatalogMigrationSchedulerBuildsExactOwnedTwoPhaseSchedule(t *test
 	require.Equal(t, request.CurrentPeriodEnd, stripe.Int64Value(provider.updateParams.Phases[0].EndDate))
 	require.Equal(t, request.CurrentPriceID, stripe.StringValue(provider.updateParams.Phases[0].Items[0].Price))
 	require.Equal(t, request.CurrentPeriodEnd, stripe.Int64Value(provider.updateParams.Phases[1].StartDate))
-	require.Equal(t, time.Unix(request.CurrentPeriodEnd, 0).UTC().AddDate(0, 1, 0).Unix(), stripe.Int64Value(provider.updateParams.Phases[1].EndDate))
+	require.Equal(t, catalogMigrationNextMonthlyPeriodEnd(request.CurrentPeriodEnd), stripe.Int64Value(provider.updateParams.Phases[1].EndDate))
 	require.Equal(t, request.TargetPriceID, stripe.StringValue(provider.updateParams.Phases[1].Items[0].Price))
 	require.Equal(t, request.BatchID, provider.updateParams.Metadata[catalogMigrationMetadataBatch])
 	require.Equal(t, request.ExpectedOwnershipFingerprint, provider.updateParams.Metadata[catalogMigrationMetadataOwnership])
@@ -329,7 +353,7 @@ func TestCatalogMigrationUserActionSupersedesOnlyExactOwnedSchedule(t *testing.T
 	catalogMigrationRuntimeProviderScheduler = scheduler
 	t.Cleanup(func() { catalogMigrationRuntimeProviderScheduler = original })
 
-	version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0)
+	version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0, 0)
 	require.NoError(t, err)
 	require.True(t, superseded)
 	require.Greater(t, version, contract.ChangeVersion)
@@ -353,7 +377,7 @@ func TestCatalogMigrationUserActionBlocksAndMarksAttentionWhenOwnershipIsUnclear
 	require.NoError(t, model.DB.Where("catalog_migration_batch_id = ?", result.Batch.Id).First(&intent).Error)
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", contract.CurrentProviderBindingId).Update("provider_schedule_id", "sched_unrelated").Error)
 
-	_, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0)
+	_, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0, 0)
 	require.ErrorContains(t, err, "ownership is unclear")
 	require.False(t, superseded)
 	require.NoError(t, model.DB.First(&intent, intent.Id).Error)
@@ -384,7 +408,7 @@ func TestCatalogMigrationUserActionRestoreFailureDoesNotReportSuperseded(t *test
 	catalogMigrationRuntimeProviderScheduler = &stripeCatalogMigrationScheduler{provider: provider, sandbox: func() CatalogMigrationSandboxConfig { return sandbox }}
 	t.Cleanup(func() { catalogMigrationRuntimeProviderScheduler = original })
 
-	version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0)
+	version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0, 0)
 	require.ErrorContains(t, err, "release unavailable")
 	require.False(t, superseded)
 	require.Equal(t, contract.ChangeVersion, version)
@@ -435,6 +459,128 @@ func TestCancelCurrentSubscriptionRenewalPreemptsCatalogMigrationThenCancels(t *
 	require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, intent.Status)
 	require.NoError(t, model.DB.First(&contract, contract.Id).Error)
 	require.Zero(t, contract.PendingPlanId)
+}
+
+func TestCancelRenewalWithStaleChangeVersionMakesNoStripeCall(t *testing.T) {
+	// The client's ExpectedChangeVersion is the concurrency guard for the
+	// whole cancel. A stale request must be rejected before any Stripe side
+	// effect (schedule release) and before the intent is superseded.
+	service, command, contract, _ := setupCatalogMigrationApplyFixture(t, true)
+	service.Scheduler = &catalogMigrationSchedulerStub{}
+	result, err := service.Apply(context.Background(), command)
+	require.NoError(t, err)
+	var intent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.Where("catalog_migration_batch_id = ?", result.Batch.Id).First(&intent).Error)
+	request := catalogMigrationRequestFromStoredState(t, result.Batch.Id, contract.Id, intent.Id)
+	provider := fakeProviderForStoredCatalogMigration(t, request)
+	provider.schedule = ownedCatalogMigrationSchedule(request)
+	provider.subscription.Schedule = &stripe.SubscriptionSchedule{ID: intent.ProviderScheduleId}
+	provider.schedule.ID = intent.ProviderScheduleId
+	sandbox := service.Sandbox
+	originalScheduler := catalogMigrationRuntimeProviderScheduler
+	catalogMigrationRuntimeProviderScheduler = &stripeCatalogMigrationScheduler{provider: provider, sandbox: func() CatalogMigrationSandboxConfig { return sandbox }}
+	t.Cleanup(func() { catalogMigrationRuntimeProviderScheduler = originalScheduler })
+	require.NoError(t, model.DB.First(&contract, contract.Id).Error)
+
+	stale := renewalLifecyclePrecondition(contract, model.SubscriptionRenewalStatusEnabled)
+	stale.ExpectedChangeVersion = contract.ChangeVersion - 1
+	_, err = CancelCurrentSubscriptionRenewal(contract.UserId, stale)
+	require.ErrorContains(t, err, "precondition conflict")
+	require.Zero(t, provider.releaseCalls)
+	require.NoError(t, model.DB.First(&intent, intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusScheduled, intent.Status)
+	var unchanged model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&unchanged, contract.Id).Error)
+	require.Equal(t, contract.ChangeVersion, unchanged.ChangeVersion)
+	require.Equal(t, contract.PendingPlanId, unchanged.PendingPlanId)
+}
+
+func TestCatalogMigrationUserActionAttentionNeverRelabelsAppliedIntent(t *testing.T) {
+	// If the final local transaction of a user-action supersede fails after a
+	// concurrent paid renewal applied the intent, the attention marker must not
+	// relabel the applied migration (and freeze the contract).
+	service, command, contract, _ := setupCatalogMigrationApplyFixture(t, true)
+	service.Scheduler = &catalogMigrationSchedulerStub{}
+	result, err := service.Apply(context.Background(), command)
+	require.NoError(t, err)
+	var intent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.Where("catalog_migration_batch_id = ?", result.Batch.Id).First(&intent).Error)
+	var binding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&binding, contract.CurrentProviderBindingId).Error)
+	require.NoError(t, model.DB.First(&contract, contract.Id).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("status", model.SubscriptionChangeIntentStatusApplied).Error)
+	require.NoError(t, model.DB.First(&intent, intent.Id).Error)
+
+	prepared := &catalogMigrationUserActionPreemption{binding: binding, contract: contract, intent: intent}
+	require.NoError(t, markCatalogMigrationUserActionAttention(context.Background(), prepared, errors.New("late failure")))
+	require.NoError(t, model.DB.First(&intent, intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, intent.Status)
+	require.NoError(t, model.DB.First(&contract, contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, contract.Status)
+}
+
+func TestCatalogMigrationUserActionIgnoresExpiredOrConsumedReservation(t *testing.T) {
+	// A consumed reservation keeps token/action as a tombstone (until=0), and
+	// an expired one keeps all three fields. Neither is "busy".
+	for _, tc := range []struct {
+		name  string
+		until int64
+	}{
+		{name: "consumed tombstone", until: 0},
+		{name: "expired", until: time.Now().Unix() - 60},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service, command, contract, _ := setupCatalogMigrationApplyFixture(t, true)
+			service.Scheduler = &catalogMigrationSchedulerStub{}
+			result, err := service.Apply(context.Background(), command)
+			require.NoError(t, err)
+			var intent model.SubscriptionChangeIntent
+			require.NoError(t, model.DB.Where("catalog_migration_batch_id = ?", result.Batch.Id).First(&intent).Error)
+			var binding model.SubscriptionProviderBinding
+			require.NoError(t, model.DB.First(&binding, contract.CurrentProviderBindingId).Error)
+			require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Updates(map[string]any{
+				"lifecycle_reservation_token": "old-cancel-token", "lifecycle_reservation_action": model.SubscriptionProviderLifecycleActionCancel, "lifecycle_reservation_until": tc.until,
+			}).Error)
+			request := catalogMigrationRequestFromStoredState(t, result.Batch.Id, contract.Id, intent.Id)
+			provider := fakeProviderForStoredCatalogMigration(t, request)
+			provider.schedule = ownedCatalogMigrationSchedule(request)
+			provider.schedule.ID = binding.ProviderScheduleId
+			provider.subscription.Schedule = &stripe.SubscriptionSchedule{ID: binding.ProviderScheduleId}
+			sandbox := service.Sandbox
+			original := catalogMigrationRuntimeProviderScheduler
+			catalogMigrationRuntimeProviderScheduler = &stripeCatalogMigrationScheduler{provider: provider, sandbox: func() CatalogMigrationSandboxConfig { return sandbox }}
+			t.Cleanup(func() { catalogMigrationRuntimeProviderScheduler = original })
+
+			_, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0, 0)
+			require.NoError(t, err)
+			require.True(t, superseded)
+			require.Equal(t, 1, provider.releaseCalls)
+		})
+	}
+}
+
+func TestCatalogMigrationWalletUserActionSupersedesLocalIntent(t *testing.T) {
+	// Wallet contracts have no provider leg. A user cancel or plan change must
+	// still supersede a scheduled local cutover and clear the pending plan.
+	service, command, contract, _ := setupCatalogMigrationApplyFixture(t, false)
+	result, err := service.Apply(context.Background(), command)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Summary.Scheduled)
+	var intent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.Where("catalog_migration_batch_id = ?", result.Batch.Id).First(&intent).Error)
+	require.NoError(t, model.DB.First(&contract, contract.Id).Error)
+	require.NotZero(t, contract.PendingPlanId)
+
+	version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), contract.UserId, 0, contract.ChangeVersion)
+	require.NoError(t, err)
+	require.True(t, superseded)
+	require.Greater(t, version, contract.ChangeVersion)
+	require.NoError(t, model.DB.First(&intent, intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, intent.Status)
+	require.NoError(t, model.DB.First(&contract, contract.Id).Error)
+	require.Zero(t, contract.PendingPlanId)
+	require.Zero(t, contract.PendingEffectiveAt)
+	require.Equal(t, intent.PreviousChangeIntentId, contract.LatestChangeIntentId)
 }
 
 func setupStripeCatalogMigrationSchedulerTest(t *testing.T) (*stripeCatalogMigrationScheduler, *fakeCatalogMigrationStripeProvider, CatalogMigrationProviderScheduleRequest) {

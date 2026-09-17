@@ -287,6 +287,52 @@ func TestCatalogMigrationApplyStripeSchedulesOnceAndCancelRestoresOwnedSchedule(
 	require.Equal(t, contract.CurrentPlanId, unchanged.CurrentPlanId)
 }
 
+func TestCatalogMigrationCancelIsStickyAndRefusesReapply(t *testing.T) {
+	// A contract whose prepare failed transiently has no intent row. After the
+	// operator cancels the batch, a replayed apply (same request_id) must be
+	// refused instead of scheduling that customer into the cancelled batch.
+	service, command, contract, _ := setupCatalogMigrationApplyFixture(t, true)
+	scheduler := &catalogMigrationSchedulerStub{}
+	service.Scheduler = scheduler
+	// Drift the contract so prepare fails before any intent is created.
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Update("change_version", contract.ChangeVersion+1).Error)
+	result, err := service.Apply(context.Background(), command)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Summary.Failed)
+	require.Equal(t, 0, scheduler.scheduleCalls)
+
+	cancelled, err := service.Cancel(context.Background(), CatalogMigrationCancelCommand{BatchID: result.Batch.Id, RequestedBy: 99})
+	require.NoError(t, err)
+	require.Equal(t, model.SubscriptionCatalogMigrationBatchStatusCancelled, cancelled.Batch.Status)
+	var stored model.SubscriptionCatalogMigrationBatch
+	require.NoError(t, model.DB.First(&stored, "id = ?", result.Batch.Id).Error)
+	require.Equal(t, model.SubscriptionCatalogMigrationBatchStatusCancelled, stored.Status)
+
+	// The drift is repaired; a replayed apply must still be refused.
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Update("change_version", contract.ChangeVersion).Error)
+	_, err = service.Apply(context.Background(), command)
+	require.ErrorContains(t, err, "cancelled")
+	require.Equal(t, 0, scheduler.scheduleCalls)
+	var intents int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("catalog_migration_batch_id = ?", result.Batch.Id).Count(&intents).Error)
+	require.Zero(t, intents)
+
+	// Status stays cancelled through a summary refresh.
+	require.NoError(t, service.refreshBatchSummary(context.Background(), result.Batch.Id))
+	reloaded, err := service.Get(context.Background(), result.Batch.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.SubscriptionCatalogMigrationBatchStatusCancelled, reloaded.Batch.Status)
+}
+
+func TestCatalogMigrationSummaryCountsSyncingAsInFlight(t *testing.T) {
+	var summary CatalogMigrationOperationSummary
+	addCatalogMigrationSummaryItem(&summary, CatalogMigrationOperationItem{Status: model.SubscriptionChangeIntentStatusSyncing})
+	require.Equal(t, 1, summary.Total)
+	require.Equal(t, 1, summary.Syncing)
+	require.Zero(t, summary.Failed)
+	require.Equal(t, model.SubscriptionCatalogMigrationBatchStatusApplying, catalogMigrationBatchStatus(summary))
+}
+
 func TestCatalogMigrationApplyClosedSandboxWritesNothing(t *testing.T) {
 	service, command, _, _ := setupCatalogMigrationApplyFixture(t, false)
 	service.Sandbox.FeatureEnabled = false

@@ -1,13 +1,10 @@
 package service
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -42,7 +39,7 @@ func EncodeRecurringPlanSnapshotV1(snapshot RecurringPlanSnapshotV1) (string, er
 	if err := ValidateRecurringPlanSnapshotV1(snapshot); err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(snapshot)
+	payload, err := common.Marshal(snapshot)
 	if err != nil {
 		return "", err
 	}
@@ -53,14 +50,9 @@ func DecodeRecurringPlanSnapshotV1(raw string) (RecurringPlanSnapshotV1, error) 
 	if strings.TrimSpace(raw) == "" {
 		return RecurringPlanSnapshotV1{}, errors.New("recurring plan snapshot is missing")
 	}
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
-	decoder.DisallowUnknownFields()
 	var snapshot RecurringPlanSnapshotV1
-	if err := decoder.Decode(&snapshot); err != nil {
+	if err := common.DecodeJsonDisallowUnknownFields(strings.NewReader(raw), &snapshot); err != nil {
 		return RecurringPlanSnapshotV1{}, fmt.Errorf("decode recurring plan snapshot: %w", err)
-	}
-	if err := requireJSONEOF(decoder); err != nil {
-		return RecurringPlanSnapshotV1{}, err
 	}
 	snapshot = normalizeRecurringPlanSnapshotV1(snapshot)
 	if err := ValidateRecurringPlanSnapshotV1(snapshot); err != nil {
@@ -181,9 +173,9 @@ func ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot RecurringPlanSna
 	if price == nil || strings.TrimSpace(price.ID) == "" {
 		return errors.New("Stripe Price is missing")
 	}
-	if price.Livemode {
-		return errors.New("Stripe Price must be test mode")
-	}
+	// Stripe mode (test vs live) is deliberately not part of the snapshot
+	// contract: production cutovers use live Prices and staging uses test
+	// Prices. Mode consistency is enforced by ValidateCatalogMigrationStripeSandbox.
 	if !price.Active || price.Deleted {
 		return errors.New("Stripe Price is inactive")
 	}
@@ -227,7 +219,7 @@ func FreezeLegacyRecurringPlanSnapshotV1(order *model.SubscriptionOrder, binding
 		return RecurringPlanSnapshotV1{}, err
 	}
 	var legacy purchasePlanSnapshot
-	if strings.TrimSpace(order.PlanSnapshot) == "" || json.Unmarshal([]byte(order.PlanSnapshot), &legacy) != nil {
+	if strings.TrimSpace(order.PlanSnapshot) == "" || common.Unmarshal([]byte(order.PlanSnapshot), &legacy) != nil {
 		return RecurringPlanSnapshotV1{}, errors.New("legacy recurring order plan snapshot is invalid")
 	}
 	legacyCurrency := strings.ToUpper(strings.TrimSpace(legacy.Currency))
@@ -275,9 +267,12 @@ type CatalogMigrationSandboxConfig struct {
 	DeploymentEnvironment string
 	ServiceName           string
 	FeatureEnabled        bool
-	AllowedContractIDs    []int64
-	StripeSecret          string
-	StripePublishableKey  string
+	// ProductionEnabled is an explicit second gate for live-mode migrations.
+	// Staging migrations continue to require test credentials and an allowlist.
+	ProductionEnabled    bool
+	AllowedContractIDs   []int64
+	StripeSecret         string
+	StripePublishableKey string
 }
 
 type CatalogMigrationStripeSandboxFacts struct {
@@ -297,14 +292,22 @@ type CatalogMigrationStripeSandboxFacts struct {
 }
 
 func ValidateCatalogMigrationCommonSandbox(config CatalogMigrationSandboxConfig, contractID int64) error {
-	if strings.TrimSpace(config.DeploymentEnvironment) != "staging" {
-		return errors.New("catalog migration requires staging deployment environment")
-	}
-	if strings.TrimSpace(config.ServiceName) != "newapi-staging" {
-		return errors.New("catalog migration requires newapi-staging service")
-	}
 	if !config.FeatureEnabled {
 		return errors.New("catalog migration feature is disabled")
+	}
+	env := strings.ToLower(strings.TrimSpace(config.DeploymentEnvironment))
+	service := strings.TrimSpace(config.ServiceName)
+	switch env {
+	case "staging":
+		if service != "newapi-staging" || config.ProductionEnabled {
+			return errors.New("catalog migration staging service facts are invalid")
+		}
+	case "production":
+		if !config.ProductionEnabled || (service != "newapi-console" && service != "newapi-router") {
+			return errors.New("catalog migration production gate is not enabled")
+		}
+	default:
+		return errors.New("catalog migration deployment environment is invalid")
 	}
 	if contractID <= 0 || !containsContractID(config.AllowedContractIDs, contractID) {
 		return errors.New("catalog migration contract is not allowlisted")
@@ -318,11 +321,24 @@ func ValidateCatalogMigrationStripeSandbox(config CatalogMigrationSandboxConfig,
 	}
 	secret := strings.TrimSpace(config.StripeSecret)
 	publishable := strings.TrimSpace(config.StripePublishableKey)
-	if (!strings.HasPrefix(secret, "sk_test_") && !strings.HasPrefix(secret, "rk_test_")) || !strings.HasPrefix(publishable, "pk_test_") {
-		return errors.New("catalog migration requires Stripe test credentials")
-	}
-	if facts.BindingLivemode || facts.SubscriptionLivemode || facts.CurrentPriceLivemode || facts.TargetPriceLivemode {
-		return errors.New("catalog migration rejects Stripe live-mode facts")
+	live := strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production")
+	if live {
+		if !strings.HasPrefix(secret, "sk_live_") && !strings.HasPrefix(secret, "rk_live_") {
+			return errors.New("production catalog migration requires Stripe live credentials")
+		}
+		if !strings.HasPrefix(publishable, "pk_live_") {
+			return errors.New("production catalog migration requires Stripe live publishable key")
+		}
+		if !facts.BindingLivemode || !facts.SubscriptionLivemode || !facts.CurrentPriceLivemode || !facts.TargetPriceLivemode {
+			return errors.New("production catalog migration requires Stripe live-mode facts")
+		}
+	} else {
+		if (!strings.HasPrefix(secret, "sk_test_") && !strings.HasPrefix(secret, "rk_test_")) || !strings.HasPrefix(publishable, "pk_test_") {
+			return errors.New("catalog migration requires Stripe test credentials")
+		}
+		if facts.BindingLivemode || facts.SubscriptionLivemode || facts.CurrentPriceLivemode || facts.TargetPriceLivemode {
+			return errors.New("catalog migration rejects Stripe live-mode facts")
+		}
 	}
 	if !sameRequiredIdentifier(facts.BindingSubscriptionID, facts.SubscriptionID) {
 		return errors.New("catalog migration Stripe subscription mismatch")
@@ -362,16 +378,6 @@ func validateRecurringPlanSnapshotReset(snapshot RecurringPlanSnapshotV1) error 
 		return errors.New("recurring plan snapshot reset period is invalid")
 	}
 	return nil
-}
-
-func requireJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err == io.EOF {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("decode recurring plan snapshot: %w", err)
-	}
-	return errors.New("decode recurring plan snapshot: trailing JSON value")
 }
 
 func containsContractID(allowed []int64, contractID int64) bool {

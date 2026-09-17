@@ -78,6 +78,10 @@ type PaidInvoiceReconcileResult struct {
 	Entitlement           *model.UserSubscription
 	Applied               bool
 	PaymentAnalyticsEvent *model.PaymentAnalyticsEvent
+	// CatalogMigrationBatchID is set when this invoice applied a catalog
+	// cutover, so the batch summary can be refreshed after commit without an
+	// extra unindexed lookup on every paid invoice.
+	CatalogMigrationBatchID string
 }
 
 type paidInvoicePermanentError struct {
@@ -768,7 +772,6 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 		}
 	}
 	result := &PaidInvoiceReconcileResult{}
-	catalogBatchID := ""
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var existingBinding model.SubscriptionProviderBinding
 		if err := tx.Where("provider = ? AND provider_subscription_id = ?", model.PaymentProviderStripe, facts.SubscriptionID).First(&existingBinding).Error; err == nil {
@@ -913,14 +916,8 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 	if strings.TrimSpace(facts.TradeNo) != "" {
 		deliverInviteSubscriptionRewardAfterOrderCompleted(ctx, facts.TradeNo)
 	}
-	if catalogBatchID == "" && result.Binding != nil {
-		var appliedIntent model.SubscriptionChangeIntent
-		if findErr := model.DB.Where("contract_id = ? AND provider_invoice_id = ? AND kind = ? AND status = ?", result.Binding.ContractId, facts.InvoiceID, model.SubscriptionChangeIntentKindCatalogMigration, model.SubscriptionChangeIntentStatusApplied).First(&appliedIntent).Error; findErr == nil && appliedIntent.CatalogMigrationBatchId != nil {
-			catalogBatchID = strings.TrimSpace(*appliedIntent.CatalogMigrationBatchId)
-		}
-	}
-	if catalogBatchID != "" {
-		if refreshErr := (CatalogMigrationService{DB: model.DB}).refreshBatchSummary(ctx, catalogBatchID); refreshErr != nil {
+	if result.CatalogMigrationBatchID != "" {
+		if refreshErr := (CatalogMigrationService{DB: model.DB}).refreshBatchSummary(ctx, result.CatalogMigrationBatchID); refreshErr != nil {
 			common.SysLog("failed to refresh catalog migration batch after paid invoice: " + refreshErr.Error())
 		}
 	}
@@ -1010,15 +1007,16 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 		}
 		planSnapshot, catalog, err := resolveRenewalPlanSnapshotTx(tx, facts, binding, contract, plan, pendingDowngrade)
 		if err != nil {
-			return PermanentPaidInvoiceError(err)
+			return catalogRenewalResolutionError(err)
 		}
 		if catalog != nil {
 			plan, err = loadRenewalSnapshotPlanTx(tx, catalog.Snapshot, true)
 			if err != nil {
 				return PermanentPaidInvoiceError(err)
 			}
+			applyCatalogRenewalPendingFacts(contract, catalog)
 		}
-		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot, false); err != nil {
+		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
 		var entitlement model.UserSubscription
@@ -1450,7 +1448,12 @@ func recurringPlanSnapshotFromBindingTx(tx *gorm.DB, binding *model.Subscription
 		if err != nil {
 			return recurringInvoicePlanSnapshot{}, err
 		}
-		return recurringInvoicePlanSnapshot{Typed: &snapshot, Raw: binding.CurrentPlanSnapshot}, nil
+		// A typed snapshot names the plan it was frozen for. When the binding
+		// has since moved to another plan (upgrade/downgrade executed elsewhere),
+		// the snapshot is stale and must not govern this renewal.
+		if snapshot.PlanID == binding.PlanId {
+			return recurringInvoicePlanSnapshot{Typed: &snapshot, Raw: binding.CurrentPlanSnapshot}, nil
+		}
 	}
 	if binding.InitialOrderId <= 0 {
 		return recurringInvoicePlanSnapshot{}, nil
@@ -1908,20 +1911,21 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	}
 	planSnapshot, catalog, err := resolveRenewalPlanSnapshotTx(tx, commonFacts, binding, contract, plan, pendingDowngrade)
 	if err != nil {
-		return PermanentPaidInvoiceError(err)
+		return catalogRenewalResolutionError(err)
 	}
 	if catalog != nil {
 		plan, err = loadRenewalSnapshotPlanTx(tx, catalog.Snapshot, true)
 		if err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
+		applyCatalogRenewalPendingFacts(contract, catalog)
 	}
 	if pendingDowngrade {
 		// This is a real change to another plan, not a renewal of the original
 		// order's frozen product. Persist the target limits in the new entitlement.
 		planSnapshot = recurringInvoicePlanSnapshot{}
 	}
-	if err := validateRenewalInvoiceFactsTx(tx, commonFacts, binding, contract, plan, user, planSnapshot, false); err != nil {
+	if err := validateRenewalInvoiceFactsTx(tx, commonFacts, binding, contract, plan, user, planSnapshot); err != nil {
 		return PermanentPaidInvoiceError(err)
 	}
 	if reservation != nil {
@@ -1947,12 +1951,12 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		}
 		return nil
 	}
-	released, err := commitStripeSubscriptionDiscountInvoiceForPaidRenewalTx(tx, facts.InvoiceID)
-	if err != nil {
+	// A reservation that was already released (invoice voided then paid late,
+	// or a permanent item error before finalization) means the customer paid
+	// the undiscounted price. The grant still proceeds; only the ledger commit
+	// is skipped.
+	if _, err := commitStripeSubscriptionDiscountInvoiceForPaidRenewalTx(tx, facts.InvoiceID); err != nil {
 		return err
-	}
-	if released {
-		return PermanentPaidInvoiceError(errors.New("subscription discount invoice reservation was already released"))
 	}
 	grantInput := model.GrantEntitlementInput{
 		ContractId:           contract.Id,
@@ -2000,6 +2004,10 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	}
 	if catalog != nil {
 		bindingUpdates["current_plan_snapshot"] = catalog.Raw
+	} else if pendingDowngrade {
+		// The binding now bills another catalog plan; a typed snapshot frozen
+		// for the previous plan would be stale.
+		bindingUpdates["current_plan_snapshot"] = ""
 	}
 	if err := tx.Model(binding).Where("id = ?", binding.Id).Updates(bindingUpdates).Error; err != nil {
 		return err
@@ -2015,9 +2023,10 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	}
 	if catalog != nil {
 		contractUpdates["latest_change_intent_id"] = catalog.Intent.Id
+		result.CatalogMigrationBatchID = strings.TrimSpace(*catalog.Intent.CatalogMigrationBatchId)
 		intentUpdate := tx.Model(&model.SubscriptionChangeIntent{}).
 			Where("id = ? AND contract_id = ? AND user_id = ? AND provider_binding_id = ? AND change_version = ? AND status = ?",
-				catalog.Intent.Id, contract.Id, contract.UserId, binding.Id, catalog.Intent.ChangeVersion, model.SubscriptionChangeIntentStatusScheduled).
+				catalog.Intent.Id, contract.Id, contract.UserId, binding.Id, catalog.Intent.ChangeVersion, catalog.Intent.Status).
 			Updates(map[string]interface{}{
 				"status":              model.SubscriptionChangeIntentStatusApplied,
 				"provider_invoice_id": facts.InvoiceID,
@@ -2217,7 +2226,12 @@ func lockRenewalBindingFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts) (*mo
 	return &binding, &contract, &plan, &user, nil
 }
 
-func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot, amountIsSubtotal bool) error {
+// validateRenewalInvoiceFactsTx proves that a Stripe renewal invoice belongs
+// to this binding/contract and bills the expected catalog price. It deliberately
+// never compares Stripe amounts with local prices: tax, customer credit
+// balance, coupons and rounding legitimately change what Stripe collects, and
+// an amount check would turn genuinely paid invoices into permanent failures.
+func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
 	if binding.ContractId <= 0 || contract.Id != binding.ContractId || contract.UserId != binding.UserId {
 		return errors.New("local contract ownership mismatch")
 	}
@@ -2247,10 +2261,15 @@ func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, 
 	expectedCurrency := strings.ToUpper(strings.TrimSpace(plan.Currency))
 	expectedBaseMinor, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, expectedCurrency)
 	if planSnapshot.Typed != nil {
-		expectedPriceID = planSnapshot.Typed.StripePriceID
+		// A frozen purchase snapshot is authoritative for an ordinary renewal,
+		// while a reached pending plan must validate against that target plan's
+		// catalog price.
+		if !pendingPlanAllowed {
+			expectedPriceID = planSnapshot.Typed.StripePriceID
+		}
 		expectedCurrency = planSnapshot.Typed.Currency
 		expectedBaseMinor = planSnapshot.Typed.BasePriceMinor
-	} else if planSnapshot.Found {
+	} else if !pendingPlanAllowed && planSnapshot.Found {
 		if frozenPriceID := strings.TrimSpace(planSnapshot.Snapshot.StripePriceID); frozenPriceID != "" {
 			expectedPriceID = frozenPriceID
 		}
@@ -2270,19 +2289,10 @@ func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, 
 	if facts.Quantity != 1 {
 		return fmt.Errorf("Stripe subscription quantity mismatch: expected 1 got %d", facts.Quantity)
 	}
-	expectedPayment, discounted, err := stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx, facts, binding, contract, planSnapshot, expectedBaseMinor)
-	if err != nil {
+	// A reserved invitation discount must still describe this exact invoice
+	// and renewal ownership; the resulting payment amount is Stripe's to decide.
+	if _, _, err := stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx, facts, binding, contract, planSnapshot, expectedBaseMinor); err != nil {
 		return err
-	}
-	if discounted {
-		if amountIsSubtotal && facts.Amount != expectedBaseMinor {
-			return fmt.Errorf("Stripe invoice subtotal mismatch: expected %d got %d", expectedBaseMinor, facts.Amount)
-		}
-		if !amountIsSubtotal && facts.Amount != expectedPayment {
-			return fmt.Errorf("Stripe invoice discounted amount mismatch: expected %d got %d", expectedPayment, facts.Amount)
-		}
-	} else if planSnapshot.Typed != nil && facts.Amount != expectedBaseMinor {
-		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedBaseMinor, facts.Amount)
 	}
 	return nil
 }
@@ -2312,13 +2322,13 @@ func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, facts 
 		snapshot.ExpectedFinalPaymentMinor < 0 || snapshot.IncrementalItemMinor != reserve.AppliedAmountMinor {
 		return 0, true, errors.New("subscription discount invoice snapshot mismatch")
 	}
-	if snapshot.Version == 1 && planSnapshot.Typed == nil {
+	if snapshot.Version == 1 {
+		// Reservations prepared before typed renewal ownership existed keep
+		// their original (invoice-identity only) contract. There is no drain or
+		// migration for in-flight v1 reservations, so they must stay honored.
 		return snapshot.ExpectedFinalPaymentMinor, true, nil
 	}
-	if snapshot.Version != 2 {
-		return 0, true, errors.New("subscription discount invoice snapshot lacks typed renewal ownership")
-	}
-	fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot)
+	fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot, snapshotPlanID(planSnapshot, binding.PlanId))
 	if err != nil {
 		return 0, true, err
 	}
@@ -2329,7 +2339,7 @@ func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, facts 
 		snapshot.BindingID != binding.Id || snapshot.ContractID != contract.Id || snapshot.UserID != binding.UserId ||
 		snapshot.PlanID != snapshotPlanID(planSnapshot, binding.PlanId) ||
 		strings.ToUpper(strings.TrimSpace(snapshot.Currency)) != strings.ToUpper(strings.TrimSpace(facts.Currency)) ||
-		snapshot.BasePriceMinor != baseMinor || snapshot.OriginalSubtotalMinor != baseMinor ||
+		snapshot.BasePriceMinor != baseMinor ||
 		snapshot.Quantity != facts.Quantity || snapshot.PeriodStart != facts.PeriodStart || snapshot.PeriodEnd != facts.PeriodEnd ||
 		snapshot.PlanSnapshotFingerprint != fingerprint {
 		return 0, true, errors.New("subscription discount invoice snapshot mismatch")
@@ -2337,7 +2347,11 @@ func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, facts 
 	return snapshot.ExpectedFinalPaymentMinor, true, nil
 }
 
-func recurringInvoiceSnapshotFingerprint(snapshot recurringInvoicePlanSnapshot) (string, error) {
+// recurringInvoiceSnapshotFingerprint identifies the plan facts a discount
+// reservation was prepared against. Renewals without any frozen snapshot (for
+// example a reached scheduled downgrade, which bills the target catalog plan)
+// are identified by the plan id alone.
+func recurringInvoiceSnapshotFingerprint(snapshot recurringInvoicePlanSnapshot, planID int) (string, error) {
 	if snapshot.Typed != nil {
 		return RecurringPlanSnapshotV1Fingerprint(*snapshot.Typed)
 	}
@@ -2348,7 +2362,13 @@ func recurringInvoiceSnapshotFingerprint(snapshot recurringInvoicePlanSnapshot) 
 		}
 		return fingerprintJSON(string(payload)), nil
 	}
-	return "", errors.New("renewal plan snapshot is missing")
+	if snapshot.GrantLimits != nil {
+		return fingerprintJSON(fmt.Sprintf("entitlement-limits:%d:%d", snapshot.GrantLimits.Id, snapshot.GrantLimits.PlanId)), nil
+	}
+	if planID <= 0 {
+		return "", errors.New("renewal plan snapshot is missing")
+	}
+	return fingerprintJSON(fmt.Sprintf("catalog-plan:%d", planID)), nil
 }
 
 func snapshotPlanID(snapshot recurringInvoicePlanSnapshot, fallback int) int {
@@ -2417,17 +2437,11 @@ func resolveRenewalPlanSnapshotTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, b
 	if pendingDowngrade {
 		return recurringInvoicePlanSnapshot{}, nil, nil
 	}
+	// An ordinary renewal grants from the frozen snapshot; the current catalog
+	// row may have been edited since and must not be able to block it.
 	snapshot, err := recurringPlanSnapshotFromBindingTx(tx, binding)
 	if err != nil {
 		return recurringInvoicePlanSnapshot{}, nil, err
-	}
-	if snapshot.Typed != nil {
-		if snapshot.Typed.PlanID != binding.PlanId {
-			return recurringInvoicePlanSnapshot{}, nil, errors.New("binding current plan snapshot plan mismatch")
-		}
-		if _, err := loadRenewalSnapshotPlanTx(tx, *snapshot.Typed, false); err != nil {
-			return recurringInvoicePlanSnapshot{}, nil, err
-		}
 	}
 	return snapshot, nil, nil
 }
@@ -2448,6 +2462,24 @@ func loadRenewalSnapshotPlanTx(tx *gorm.DB, snapshot RecurringPlanSnapshotV1, re
 	return &plan, nil
 }
 
+// catalogRenewalRuntimeError marks a boundary failure caused by the running
+// process (wrong service, environment or Stripe credentials for the batch).
+// Such failures must be retried on another node/deploy, never acknowledged as
+// permanent: the customer already paid.
+type catalogRenewalRuntimeError struct{ err error }
+
+func (e catalogRenewalRuntimeError) Error() string { return e.err.Error() }
+func (e catalogRenewalRuntimeError) Unwrap() error { return e.err }
+
+// loadReachedStripeCatalogRenewalTx resolves whether this paid renewal is the
+// boundary at which a scheduled catalog cutover applies.
+//
+// Only an intent in status "scheduled" is a cutover. An intent in
+// compensation_required/needs_attention applies only when the invoice
+// already bills the target price (Stripe executed the schedule and the local
+// finalize was lost); otherwise Stripe kept billing the legacy price and this
+// is an ordinary renewal. Applied, superseded, failed and any other status
+// mean "no cutover here" and never block the renewal.
 func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract) (*catalogRenewalResolution, error) {
 	if contract.LatestChangeIntentId <= 0 {
 		return nil, nil
@@ -2459,33 +2491,12 @@ func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFac
 	if intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration {
 		return nil, nil
 	}
-	if intent.Status == model.SubscriptionChangeIntentStatusApplied {
+	if !catalogMigrationIntentCanReachBoundary(intent.Status) {
 		return nil, nil
 	}
-	if intent.Status != model.SubscriptionChangeIntentStatusScheduled || intent.ContractId != contract.Id || intent.UserId != contract.UserId ||
-		intent.FromPlanId != contract.CurrentPlanId || intent.ToPlanId <= 0 || intent.ToPlanId != contract.PendingPlanId ||
-		intent.EffectiveAt != contract.PendingEffectiveAt || intent.EffectiveAt != contract.CurrentPeriodEnd ||
+	if intent.ContractId != contract.Id || intent.UserId != contract.UserId || intent.ToPlanId <= 0 ||
 		intent.PaymentMode != model.SubscriptionPaymentModeStripeRecurring || intent.ProviderBindingId != binding.Id || intent.CatalogMigrationBatchId == nil {
 		return nil, errors.New("Stripe catalog migration intent facts drifted")
-	}
-	sandbox := catalogMigrationRuntimeSandboxConfig()
-	if err := ValidateCatalogMigrationCommonSandbox(sandbox, contract.Id); err != nil {
-		return nil, err
-	}
-	if facts.Livemode || binding.Livemode {
-		return nil, errors.New("Stripe catalog migration rejects live-mode facts")
-	}
-	secret := strings.TrimSpace(sandbox.StripeSecret)
-	if (!strings.HasPrefix(secret, "sk_test_") && !strings.HasPrefix(secret, "rk_test_")) || !strings.HasPrefix(strings.TrimSpace(sandbox.StripePublishableKey), "pk_test_") {
-		return nil, errors.New("Stripe catalog migration requires test credentials")
-	}
-	var batch model.SubscriptionCatalogMigrationBatch
-	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
-		return nil, err
-	}
-	if !batch.SandboxOnly || batch.Livemode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
-		batch.ServiceName != strings.TrimSpace(sandbox.ServiceName) || batch.Status == model.SubscriptionCatalogMigrationBatchStatusCancelled {
-		return nil, errors.New("Stripe catalog migration batch sandbox facts drifted")
 	}
 	snapshot, err := DecodeRecurringPlanSnapshotV1(intent.TargetPlanSnapshot)
 	if err != nil {
@@ -2494,15 +2505,74 @@ func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFac
 	if snapshot.PlanID != intent.ToPlanId {
 		return nil, errors.New("Stripe catalog migration target snapshot plan drifted")
 	}
+	if intent.Status != model.SubscriptionChangeIntentStatusScheduled {
+		// Provider outcome unknown locally: the invoice price is the proof.
+		if strings.TrimSpace(facts.PriceID) != strings.TrimSpace(snapshot.StripePriceID) {
+			return nil, nil
+		}
+	} else if intent.FromPlanId != contract.CurrentPlanId || intent.ToPlanId != contract.PendingPlanId ||
+		intent.EffectiveAt != contract.PendingEffectiveAt || intent.EffectiveAt != contract.CurrentPeriodEnd {
+		return nil, errors.New("Stripe catalog migration intent facts drifted")
+	}
+	if facts.PeriodStart < intent.EffectiveAt {
+		return nil, nil
+	}
 	if strings.TrimSpace(binding.ProviderSubscriptionId) != strings.TrimSpace(facts.SubscriptionID) ||
 		strings.TrimSpace(binding.ProviderSubscriptionItemId) != strings.TrimSpace(facts.SubscriptionItemID) ||
 		strings.TrimSpace(binding.ProviderCustomerId) != strings.TrimSpace(facts.CustomerID) || contract.CurrentProviderBindingId != binding.Id {
 		return nil, errors.New("Stripe catalog migration ownership facts drifted")
 	}
-	if facts.PeriodStart < intent.EffectiveAt {
-		return nil, nil
+	var batch model.SubscriptionCatalogMigrationBatch
+	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
+		return nil, err
+	}
+	sandbox := catalogMigrationRuntimeSandboxConfig()
+	if err := validateCatalogMigrationBatchRuntimeFacts(sandbox, &batch); err != nil {
+		return nil, catalogRenewalRuntimeError{err: err}
+	}
+	if !catalogMigrationCredentialsMatchMode(sandbox) {
+		return nil, catalogRenewalRuntimeError{err: errors.New("catalog migration Stripe credentials do not match deployment mode")}
+	}
+	if facts.Livemode != batch.Livemode || binding.Livemode != batch.Livemode {
+		return nil, errors.New("Stripe catalog migration livemode facts drifted")
 	}
 	return &catalogRenewalResolution{Intent: &intent, Snapshot: snapshot, Raw: intent.TargetPlanSnapshot}, nil
+}
+
+// applyCatalogRenewalPendingFacts makes a resolved cutover the reached pending
+// plan for validation purposes. A "scheduled" intent already has these facts
+// on the contract; an intent whose provider finalize was lost
+// (compensation_required/needs_attention) never got them, yet the invoice
+// billing the target price proves the cutover happened.
+func applyCatalogRenewalPendingFacts(contract *model.UserSubscriptionContract, catalog *catalogRenewalResolution) {
+	if contract == nil || catalog == nil || catalog.Intent == nil {
+		return
+	}
+	contract.PendingPlanId = catalog.Intent.ToPlanId
+	contract.PendingEffectiveAt = catalog.Intent.EffectiveAt
+}
+
+// catalogMigrationIntentCanReachBoundary reports whether an intent status can
+// still turn into an applied cutover at a renewal boundary.
+func catalogMigrationIntentCanReachBoundary(status string) bool {
+	switch status {
+	case model.SubscriptionChangeIntentStatusScheduled,
+		model.SubscriptionChangeIntentStatusCompensationRequired,
+		model.SubscriptionChangeIntentStatusNeedsAttention:
+		return true
+	default:
+		return false
+	}
+}
+
+// catalogRenewalResolutionError classifies a boundary resolution failure for
+// webhook handling: runtime drift is retryable, everything else is permanent.
+func catalogRenewalResolutionError(err error) error {
+	var runtime catalogRenewalRuntimeError
+	if errors.As(err, &runtime) {
+		return err
+	}
+	return PermanentPaidInvoiceError(err)
 }
 
 func providerSnapshotFromPaidInvoice(facts paidInvoiceFacts, invoiceID string) model.ProviderSubscriptionSnapshot {

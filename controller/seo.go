@@ -9,11 +9,15 @@ import (
 )
 
 func GetRobotsTxt(c *gin.Context) {
-	if !service.IsCanonicalPublicHost(publicRequestHost(c)) {
+	host := publicRequestHost(c)
+	switch {
+	case service.IsCanonicalPublicHost(host):
+		c.String(http.StatusOK, service.BuildRobotsTxt(publicBaseURL(c)))
+	case service.IsConsolePublicHost(host):
+		c.String(http.StatusOK, service.BuildConsoleRobotsTxt())
+	default:
 		c.String(http.StatusOK, service.BuildNonCanonicalRobotsTxt())
-		return
 	}
-	c.String(http.StatusOK, service.BuildRobotsTxt(publicBaseURL(c)))
 }
 
 func GetLLMsTxt(c *gin.Context) {

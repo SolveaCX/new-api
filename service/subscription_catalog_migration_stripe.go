@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stripe/stripe-go/v86"
@@ -57,10 +58,16 @@ func newStripeCatalogMigrationScheduler() CatalogMigrationProviderScheduler {
 	return &stripeCatalogMigrationScheduler{provider: stripeCatalogMigrationAPI{}, sandbox: catalogMigrationRuntimeSandboxConfig}
 }
 
+var errCatalogMigrationUserActionPrecondition = errors.New("subscription renewal precondition conflict")
+
 // supersedeCatalogMigrationForUserAction gives an explicit cancel or plan
 // change precedence over a queued catalog migration. It deliberately recognizes
 // only the exact latest catalog intent and preserves all ordinary intent rules.
-func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, targetPlanID int) (int64, bool, error) {
+//
+// expectedChangeVersion, when > 0, is the client's concurrency precondition.
+// It is enforced inside the locked transaction before any local or provider
+// mutation, so a stale request never releases a Stripe schedule.
+func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, targetPlanID int, expectedChangeVersion int64) (int64, bool, error) {
 	if userID <= 0 || model.DB == nil {
 		return 0, false, nil
 	}
@@ -80,7 +87,7 @@ func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, tar
 		}
 		return 0, false, err
 	}
-	if snapshot.CurrentProviderBindingId <= 0 || snapshot.LatestChangeIntentId <= 0 {
+	if snapshot.LatestChangeIntentId <= 0 {
 		return snapshot.ChangeVersion, false, nil
 	}
 	if targetPlanID > 0 {
@@ -88,6 +95,9 @@ func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, tar
 		if targetPlanID == snapshot.CurrentPlanId || model.DB.WithContext(ctx).Where("id = ? AND enabled = ?", targetPlanID, true).First(&target).Error != nil {
 			return snapshot.ChangeVersion, false, nil
 		}
+	}
+	if snapshot.CurrentProviderBindingId <= 0 {
+		return supersedeWalletCatalogMigrationForUserAction(ctx, &snapshot, expectedChangeVersion)
 	}
 
 	var prepared catalogMigrationUserActionPreemption
@@ -104,7 +114,7 @@ func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, tar
 		if err := subscriptionCommandLock(tx).Where("id = ? AND contract_id = ? AND user_id = ?", prepared.contract.LatestChangeIntentId, prepared.contract.Id, userID).First(&prepared.intent).Error; err != nil {
 			return err
 		}
-		if prepared.intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration || !containsString(cancellableCatalogMigrationIntentStatuses(), prepared.intent.Status) {
+		if prepared.intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration || !common.StringsContains(cancellableCatalogMigrationIntentStatuses(), prepared.intent.Status) {
 			prepared.intent = model.SubscriptionChangeIntent{}
 			return nil
 		}
@@ -116,7 +126,10 @@ func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, tar
 		if strings.TrimSpace(prepared.binding.CurrentPlanSnapshot) == "" || strings.TrimSpace(prepared.intent.TargetPlanSnapshot) == "" {
 			return errors.New("catalog migration ownership snapshots are incomplete")
 		}
-		if strings.TrimSpace(prepared.binding.LifecycleReservationToken) != "" || prepared.binding.LifecycleReservationUntil > 0 {
+		if expectedChangeVersion > 0 && prepared.contract.ChangeVersion != expectedChangeVersion {
+			return errCatalogMigrationUserActionPrecondition
+		}
+		if model.SubscriptionProviderLifecycleReservationIsActive(&prepared.binding, model.GetDBTimestampTx(tx)) {
 			return model.ErrSubscriptionProviderLifecycleConflict
 		}
 		token := stableCatalogMigrationKey("user-action", prepared.contract.Id, prepared.intent.Id, prepared.contract.ChangeVersion)
@@ -146,7 +159,7 @@ func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, tar
 		return nil
 	})
 	if err != nil {
-		if prepared.intent.Id > 0 {
+		if prepared.intent.Id > 0 && !errors.Is(err, errCatalogMigrationUserActionPrecondition) {
 			_ = markCatalogMigrationUserActionAttention(ctx, &prepared, err)
 		}
 		return snapshot.ChangeVersion, false, err
@@ -207,6 +220,54 @@ func supersedeCatalogMigrationForUserAction(ctx context.Context, userID int, tar
 	return prepared.contract.ChangeVersion, true, nil
 }
 
+// supersedeWalletCatalogMigrationForUserAction is the provider-less twin of the
+// Stripe path: a scheduled wallet cutover is superseded locally and the
+// pending plan cleared, so a user's cancel or plan change is not silently
+// undone by the next wallet renewal tick.
+func supersedeWalletCatalogMigrationForUserAction(ctx context.Context, snapshot *model.UserSubscriptionContract, expectedChangeVersion int64) (int64, bool, error) {
+	version := snapshot.ChangeVersion
+	superseded := false
+	err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var contract model.UserSubscriptionContract
+		if err := subscriptionCommandLock(tx).Where("id = ? AND user_id = ?", snapshot.Id, snapshot.UserId).First(&contract).Error; err != nil {
+			return err
+		}
+		version = contract.ChangeVersion
+		if contract.LatestChangeIntentId <= 0 || contract.CurrentProviderBindingId > 0 {
+			return nil
+		}
+		var intent model.SubscriptionChangeIntent
+		if err := subscriptionCommandLock(tx).Where("id = ? AND contract_id = ? AND user_id = ?", contract.LatestChangeIntentId, contract.Id, contract.UserId).First(&intent).Error; err != nil {
+			return err
+		}
+		if intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration || intent.Status != model.SubscriptionChangeIntentStatusScheduled || intent.ProviderBindingId != 0 {
+			return nil
+		}
+		if expectedChangeVersion > 0 && contract.ChangeVersion != expectedChangeVersion {
+			return errCatalogMigrationUserActionPrecondition
+		}
+		if !catalogMigrationPendingStateCanClear(contract, &intent) {
+			return errors.New("catalog migration ownership is unclear")
+		}
+		update := tx.Model(&model.SubscriptionChangeIntent{}).
+			Where("id = ? AND status = ?", intent.Id, model.SubscriptionChangeIntentStatusScheduled).
+			Updates(map[string]any{"status": model.SubscriptionChangeIntentStatusSuperseded, "last_error": "", "updated_at": common.GetTimestamp()})
+		if update.Error != nil || update.RowsAffected != 1 {
+			return firstError(update.Error, ErrSubscriptionChangeInProgress)
+		}
+		if err := clearCatalogMigrationPendingTx(tx, &contract, &intent); err != nil {
+			return err
+		}
+		version = contract.ChangeVersion + 1
+		superseded = true
+		return nil
+	})
+	if err != nil {
+		return snapshot.ChangeVersion, false, err
+	}
+	return version, superseded, nil
+}
+
 func markCatalogMigrationUserActionAttention(ctx context.Context, prepared *catalogMigrationUserActionPreemption, cause error) error {
 	if prepared == nil || prepared.intent.Id <= 0 {
 		return nil
@@ -228,20 +289,20 @@ func markCatalogMigrationUserActionAttention(ctx context.Context, prepared *cata
 		if cause != nil {
 			message = cause.Error()
 		}
-		if err := tx.Model(&intent).Updates(map[string]any{"status": model.SubscriptionChangeIntentStatusNeedsAttention, "last_error": message, "updated_at": time.Now().Unix()}).Error; err != nil {
-			return err
+		// A concurrent paid renewal may have applied the intent (or a cancel
+		// superseded it) between our prepare and this failure. A terminal
+		// intent is never relabelled, and the contract is not frozen for it.
+		intentUpdate := tx.Model(&model.SubscriptionChangeIntent{}).
+			Where("id = ? AND status NOT IN ?", intent.Id, []string{model.SubscriptionChangeIntentStatusApplied, model.SubscriptionChangeIntentStatusSuperseded}).
+			Updates(map[string]any{"status": model.SubscriptionChangeIntentStatusNeedsAttention, "last_error": message, "updated_at": time.Now().Unix()})
+		if intentUpdate.Error != nil {
+			return intentUpdate.Error
 		}
-		return tx.Model(&contract).Updates(map[string]any{"status": model.SubscriptionContractStatusNeedsAttention, "updated_at": time.Now().Unix()}).Error
+		if intentUpdate.RowsAffected != 1 {
+			return nil
+		}
+		return tx.Model(&model.UserSubscriptionContract{}).Where("id = ? AND latest_change_intent_id = ?", contract.Id, intent.Id).Updates(map[string]any{"status": model.SubscriptionContractStatusNeedsAttention, "updated_at": time.Now().Unix()}).Error
 	})
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *stripeCatalogMigrationScheduler) ScheduleCatalogMigration(ctx context.Context, request CatalogMigrationProviderScheduleRequest) (CatalogMigrationProviderScheduleResult, error) {
@@ -370,7 +431,12 @@ func (s *stripeCatalogMigrationScheduler) freshAndValidate(ctx context.Context, 
 	if err := ValidateCatalogMigrationCommonSandbox(config, request.ContractID); err != nil {
 		return nil, nil, nil, err
 	}
-	if !catalogMigrationHasTestStripeCredentials(config) {
+	liveMode := strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production")
+	if liveMode {
+		if !catalogMigrationHasLiveStripeCredentials(config) {
+			return nil, nil, nil, errors.New("production catalog migration requires Stripe live credentials")
+		}
+	} else if !catalogMigrationHasTestStripeCredentials(config) {
 		return nil, nil, nil, errors.New("catalog migration requires Stripe test credentials")
 	}
 	var binding model.SubscriptionProviderBinding
@@ -378,7 +444,7 @@ func (s *stripeCatalogMigrationScheduler) freshAndValidate(ctx context.Context, 
 		return nil, nil, nil, errors.New("catalog migration Stripe binding is unavailable")
 	}
 	if binding.Id != request.BindingID || binding.UserId != request.UserID || binding.ContractId != request.ContractID ||
-		binding.Provider != model.PaymentProviderStripe || binding.Livemode || strings.TrimSpace(binding.ProviderStatus) != "active" ||
+		binding.Provider != model.PaymentProviderStripe || binding.Livemode != liveMode || strings.TrimSpace(binding.ProviderStatus) != "active" ||
 		binding.EndedAt != 0 || binding.CancelAtPeriodEnd || strings.TrimSpace(binding.ProviderSubscriptionId) != request.ProviderSubscriptionID ||
 		strings.TrimSpace(binding.ProviderCustomerId) != request.ProviderCustomerID || strings.TrimSpace(binding.ProviderSubscriptionItemId) != request.ProviderSubscriptionItemID ||
 		strings.TrimSpace(binding.ProviderPriceId) != request.CurrentPriceID || binding.CurrentPeriodStart != request.CurrentPeriodStart || binding.CurrentPeriodEnd != request.CurrentPeriodEnd ||
@@ -437,7 +503,7 @@ func validateFreshCatalogMigrationStripeFacts(config CatalogMigrationSandboxConf
 		customerID = sub.Customer.ID
 	}
 	if err := ValidateCatalogMigrationStripeSandbox(config, CatalogMigrationStripeSandboxFacts{
-		ContractID: request.ContractID, BindingLivemode: false, SubscriptionLivemode: sub.Livemode,
+		ContractID: request.ContractID, BindingLivemode: strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production"), SubscriptionLivemode: sub.Livemode,
 		CurrentPriceLivemode: current.Livemode, TargetPriceLivemode: target.Livemode,
 		BindingSubscriptionID: request.ProviderSubscriptionID, SubscriptionID: sub.ID,
 		BindingCustomerID: request.ProviderCustomerID, SubscriptionCustomerID: customerID,
@@ -493,8 +559,24 @@ func catalogMigrationScheduleMetadata(request CatalogMigrationProviderScheduleRe
 	}
 }
 
+// catalogMigrationNextMonthlyPeriodEnd returns the end of the one-month
+// period that starts at the given instant, clamped to the last day of the
+// following month. Go's AddDate normalizes Jan 31 + 1 month to Mar 3, which
+// would write a longer-than-monthly phase and never match Stripe's own
+// month-end anchoring on the ownership re-check.
+func catalogMigrationNextMonthlyPeriodEnd(periodStart int64) int64 {
+	start := time.Unix(periodStart, 0).UTC()
+	year, month, day := start.Date()
+	firstOfNext := time.Date(year, month+1, 1, 0, 0, 0, 0, time.UTC)
+	lastDayOfNext := firstOfNext.AddDate(0, 1, -1).Day()
+	if day > lastDayOfNext {
+		day = lastDayOfNext
+	}
+	return time.Date(firstOfNext.Year(), firstOfNext.Month(), day, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), time.UTC).Unix()
+}
+
 func catalogMigrationScheduleParams(request CatalogMigrationProviderScheduleRequest, metadata map[string]string, target *stripe.Price) *stripe.SubscriptionScheduleParams {
-	targetEnd := time.Unix(request.CurrentPeriodEnd, 0).UTC().AddDate(0, 1, 0).Unix()
+	targetEnd := catalogMigrationNextMonthlyPeriodEnd(request.CurrentPeriodEnd)
 	params := &stripe.SubscriptionScheduleParams{EndBehavior: stripe.String(string(stripe.SubscriptionScheduleEndBehaviorRelease)), Metadata: metadata, ProrationBehavior: stripe.String("none")}
 	params.Phases = []*stripe.SubscriptionSchedulePhaseParams{
 		{StartDate: stripe.Int64(request.CurrentPeriodStart), EndDate: stripe.Int64(request.CurrentPeriodEnd), ProrationBehavior: stripe.String("none"), Items: []*stripe.SubscriptionSchedulePhaseItemParams{{Price: stripe.String(request.CurrentPriceID), Quantity: stripe.Int64(1)}}},
@@ -504,7 +586,7 @@ func catalogMigrationScheduleParams(request CatalogMigrationProviderScheduleRequ
 }
 
 func catalogMigrationScheduleMetadataMatches(schedule *stripe.SubscriptionSchedule, request CatalogMigrationProviderScheduleRequest, metadata map[string]string) bool {
-	if schedule == nil || schedule.Livemode || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || len(schedule.Metadata) != len(metadata) {
+	if schedule == nil || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || len(schedule.Metadata) != len(metadata) {
 		return false
 	}
 	for key, value := range metadata {
@@ -519,7 +601,7 @@ func catalogMigrationScheduleExactlyOwned(schedule *stripe.SubscriptionSchedule,
 	if !catalogMigrationScheduleMetadataMatches(schedule, request, metadata) || schedule.EndBehavior != stripe.SubscriptionScheduleEndBehaviorRelease || (schedule.Status != stripe.SubscriptionScheduleStatusActive && schedule.Status != stripe.SubscriptionScheduleStatusNotStarted) || len(schedule.Phases) != 2 {
 		return false
 	}
-	targetEnd := time.Unix(request.CurrentPeriodEnd, 0).UTC().AddDate(0, 1, 0).Unix()
+	targetEnd := catalogMigrationNextMonthlyPeriodEnd(request.CurrentPeriodEnd)
 	return catalogMigrationSchedulePhaseMatches(schedule.Phases[0], request.CurrentPeriodStart, request.CurrentPeriodEnd, request.CurrentPriceID) &&
 		catalogMigrationSchedulePhaseMatches(schedule.Phases[1], request.CurrentPeriodEnd, targetEnd, request.TargetPriceID)
 }
@@ -536,7 +618,7 @@ func catalogMigrationScheduleIsUnconfiguredForRequest(schedule *stripe.Subscript
 }
 
 func catalogMigrationScheduleCreateOutcomeMatches(schedule *stripe.SubscriptionSchedule, request CatalogMigrationProviderScheduleRequest, metadata map[string]string) bool {
-	if schedule == nil || schedule.Livemode || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) {
+	if schedule == nil || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) {
 		return false
 	}
 	// The create call intentionally sends no metadata because Stripe rejects

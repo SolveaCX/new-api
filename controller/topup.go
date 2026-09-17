@@ -202,8 +202,7 @@ func buildStripeTopUpCurrencyPrices(amountOptions []int) map[string]map[int]int6
 				continue
 			}
 			for currency, amountMinor := range stripePrices {
-				expectedAmountMinor, ok := expectedStripeTopUpAmountMinor(currency, int64(amount))
-				if !ok || amountMinor != expectedAmountMinor {
+				if !stripeTopUpCurrencySupported(currency) || amountMinor <= 0 {
 					continue
 				}
 				if currencyPrices[currency] == nil {

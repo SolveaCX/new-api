@@ -26,18 +26,20 @@ var ErrSubscriptionCatalogMigrationBatchImmutable = errors.New("subscription cat
 type SubscriptionCatalogMigrationBatch struct {
 	Id string `json:"id" gorm:"type:varchar(64);primaryKey"`
 
-	RequestId        string `json:"request_id" gorm:"type:varchar(128);not null;uniqueIndex:ux_subscription_catalog_migration_request"`
-	CohortDigest     string `json:"cohort_digest" gorm:"type:char(64);not null;uniqueIndex:ux_subscription_catalog_migration_digest"`
-	Status           string `json:"status" gorm:"type:varchar(32);not null;default:'applying';index"`
-	ManifestSnapshot string `json:"-" gorm:"type:longtext;not null;<-:create"`
-	SummarySnapshot  string `json:"-" gorm:"type:longtext"`
+	RequestId    string `json:"request_id" gorm:"type:varchar(128);not null;uniqueIndex:ux_subscription_catalog_migration_request"`
+	CohortDigest string `json:"cohort_digest" gorm:"type:char(64);not null;uniqueIndex:ux_subscription_catalog_migration_digest"`
+	Status       string `json:"status" gorm:"type:varchar(32);not null;default:'applying';index"`
+	// Snapshot columns leave the column type to the dialector (longtext on
+	// MySQL, text on PostgreSQL/SQLite) per CLAUDE.md Rule 2.
+	ManifestSnapshot string `json:"-" gorm:"not null;<-:create"`
+	SummarySnapshot  string `json:"-"`
 	RequestedBy      int    `json:"requested_by" gorm:"not null;index"`
 
-	// These immutable facts make it possible to prove that a stored batch was
-	// prepared by the staging-only implementation. Livemode must remain false.
+	// These immutable facts prove which deployment and Stripe mode prepared the
+	// cohort. They are checked again when the renewal boundary is reached.
 	DeploymentEnvironment string `json:"deployment_environment" gorm:"type:varchar(32);not null;<-:create"`
 	ServiceName           string `json:"service_name" gorm:"type:varchar(128);not null;<-:create"`
-	SandboxOnly           bool   `json:"sandbox_only" gorm:"not null;default:true;<-:create"`
+	SandboxOnly           bool   `json:"sandbox_only" gorm:"not null;<-:create"`
 	Livemode              bool   `json:"livemode" gorm:"not null;default:false;<-:create"`
 
 	CreatedAt int64 `json:"created_at" gorm:"type:bigint"`
@@ -48,8 +50,8 @@ func (b *SubscriptionCatalogMigrationBatch) BeforeCreate(tx *gorm.DB) error {
 	if b == nil {
 		return errors.New("subscription catalog migration batch is nil")
 	}
-	if b.Livemode {
-		return errors.New("live-mode catalog migration batches are not supported")
+	if b.SandboxOnly == b.Livemode {
+		return errors.New("subscription catalog migration batch mode facts are inconsistent")
 	}
 	b.Id = strings.TrimSpace(b.Id)
 	if b.Id == "" {
@@ -60,7 +62,7 @@ func (b *SubscriptionCatalogMigrationBatch) BeforeCreate(tx *gorm.DB) error {
 	b.Status = normalizeSubscriptionCatalogMigrationBatchStatus(b.Status)
 	b.DeploymentEnvironment = strings.TrimSpace(b.DeploymentEnvironment)
 	b.ServiceName = strings.TrimSpace(b.ServiceName)
-	b.SandboxOnly = true
+	b.SandboxOnly = !b.Livemode
 	now := common.GetTimestamp()
 	b.CreatedAt = now
 	b.UpdatedAt = now

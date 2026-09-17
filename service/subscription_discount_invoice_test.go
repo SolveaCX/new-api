@@ -378,6 +378,36 @@ func TestSubscriptionDiscountInvoicePrepareItemFailureKeepsPausedAndRetriesWitho
 	require.Equal(t, int64(1), reserveCount)
 }
 
+func TestSubscriptionDiscountInvoicePrepareReplayTolerantOfRecomputedSubtotal(t *testing.T) {
+	// After the first prepare adds the negative invoice item, Stripe recomputes
+	// the draft invoice subtotal. A redelivered invoice.created (or the stale
+	// reconciler) must still recognize the existing reservation instead of
+	// failing on a subtotal comparison.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	_, binding, entitlement := seedStripeRenewalContract(t, 9223, 9323, "sub_discount_replay_subtotal")
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("initial_order_id", seedInitialOrderSnapshotForRenewal(t, 9223, 9323, "sub_discount_replay_subtotal_initial")).Error)
+	grantRenewalInvitationCredit(t, 9223, 500, "grant-renewal-replay-subtotal")
+	inv := draftRenewalInvoiceFixture("in_discount_replay_subtotal", "sub_discount_replay_subtotal")
+	inv.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
+	sub := stripeSubscriptionFixture("sub_discount_replay_subtotal", map[string]string{})
+	setStripeSubscriptionCurrentPeriod(sub, entitlement.EndTime, entitlement.EndTime+2592000)
+	recorder := &stripeRenewalInvoiceMutationRecorder{}
+	replaceStripeRenewalInvoiceAccessors(t, inv, sub, recorder)
+
+	require.NoError(t, PrepareStripeSubscriptionDiscountInvoice(context.Background(), "in_discount_replay_subtotal"))
+	require.Equal(t, []int64{-300}, recorder.items)
+	// Stripe applied the item: subtotal, due and total all drop by 300.
+	inv.Subtotal -= 300
+	inv.AmountDue -= 300
+	inv.Total -= 300
+
+	require.NoError(t, PrepareStripeSubscriptionDiscountInvoice(context.Background(), "in_discount_replay_subtotal"))
+	require.Equal(t, []int64{-300}, recorder.items)
+	var reserveCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("idempotency_key = ?", "stripe-invoice:in_discount_replay_subtotal:reserve").Count(&reserveCount).Error)
+	require.Equal(t, int64(1), reserveCount)
+}
+
 func TestSubscriptionDiscountInvoicePrepareRestoresOriginalAutoAdvanceFalseAcrossRetry(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	_, binding, entitlement := seedStripeRenewalContract(t, 9225, 9325, "sub_discount_retry_auto_false")
@@ -628,7 +658,7 @@ func TestSubscriptionDiscountInvoicePaidValidationUsesSnapshotFinalPayment(t *te
 	require.Equal(t, int64(1), commitCount)
 }
 
-func TestSubscriptionDiscountInvoicePaidValidationRejectsStripeAdjustedFinalPayment(t *testing.T) {
+func TestSubscriptionDiscountInvoicePaidValidationAcceptsStripeAdjustedFinalPayment(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	_, binding, entitlement := seedStripeRenewalContract(t, 9212, 9312, "sub_discount_paid_mismatch")
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("initial_order_id", seedInitialOrderSnapshotForRenewal(t, 9212, 9312, "sub_discount_paid_mismatch_initial")).Error)
@@ -655,12 +685,15 @@ func TestSubscriptionDiscountInvoicePaidValidationRejectsStripeAdjustedFinalPaym
 	restore := replaceStripeInvoiceReconcilers(t, inv, sub)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), "in_discount_paid_mismatch")
-	require.ErrorContains(t, err, "discounted amount mismatch")
-	require.True(t, IsPermanentPaidInvoiceError(err))
+	// Stripe may adjust the final charge (tax, customer credit balance,
+	// coupons, rounding). The identity contract is the price id, currency and
+	// ownership facts, never the amount.
+	result, err := ReconcilePaidInvoice(context.Background(), "in_discount_paid_mismatch")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
 	var commitCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("terminal_reservation_key = ? AND entry_type = ?", "stripe-invoice:in_discount_paid_mismatch:reserve", model.SubscriptionDiscountEntryTypeCommit).Count(&commitCount).Error)
-	require.Zero(t, commitCount)
+	require.Equal(t, int64(1), commitCount)
 }
 
 func TestSubscriptionDiscountInvoicePaidValidationRejectsMalformedSnapshot(t *testing.T) {
@@ -694,7 +727,7 @@ func TestSubscriptionDiscountInvoicePaidValidationRejectsMalformedSnapshot(t *te
 	require.ErrorContains(t, err, "subscription discount invoice snapshot")
 }
 
-func TestSubscriptionDiscountInvoiceLatePaidAfterReleaseFailsClosedWithoutGrant(t *testing.T) {
+func TestSubscriptionDiscountInvoiceLatePaidAfterReleaseGrantsEntitlementWithoutLedgerMutation(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	contract, binding, entitlement := seedStripeRenewalContract(t, 9214, 9314, "sub_discount_late_paid")
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("initial_order_id", seedInitialOrderSnapshotForRenewal(t, 9214, 9314, "sub_discount_late_paid_initial")).Error)
@@ -722,9 +755,14 @@ func TestSubscriptionDiscountInvoiceLatePaidAfterReleaseFailsClosedWithoutGrant(
 	restore := replaceStripeInvoiceReconcilers(t, inv, sub)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), "in_discount_late_paid")
-	require.ErrorContains(t, err, "already released")
-	require.True(t, IsPermanentPaidInvoiceError(err))
+	// The customer paid. A discount reservation that was already released
+	// must not block the renewal grant; it only means no ledger commit happens.
+	first, err := ReconcilePaidInvoice(context.Background(), "in_discount_late_paid")
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+	second, err := ReconcilePaidInvoice(context.Background(), "in_discount_late_paid")
+	require.NoError(t, err)
+	require.False(t, second.Applied)
 	var releaseCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("terminal_reservation_key = ? AND entry_type = ?", "stripe-invoice:in_discount_late_paid:reserve", model.SubscriptionDiscountEntryTypeRelease).Count(&releaseCount).Error)
 	require.Equal(t, int64(1), releaseCount)
@@ -733,10 +771,8 @@ func TestSubscriptionDiscountInvoiceLatePaidAfterReleaseFailsClosedWithoutGrant(
 	require.Zero(t, commitCount)
 	var reloaded model.UserSubscriptionContract
 	require.NoError(t, model.DB.First(&reloaded, "id = ?", contract.Id).Error)
-	require.Equal(t, entitlement.Id, reloaded.CurrentEntitlementId)
-	var unchangedBinding model.SubscriptionProviderBinding
-	require.NoError(t, model.DB.First(&unchangedBinding, binding.Id).Error)
-	require.NotEqual(t, "in_discount_late_paid", unchangedBinding.ProviderLatestInvoiceId)
+	require.NotEqual(t, entitlement.Id, reloaded.CurrentEntitlementId)
+	require.Equal(t, "in_discount_late_paid", first.Binding.ProviderLatestInvoiceId)
 	var account model.SubscriptionDiscountAccount
 	require.NoError(t, model.DB.First(&account, "user_id = ?", 9214).Error)
 	require.Equal(t, int64(500), account.AvailableUSDMinor)

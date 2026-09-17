@@ -68,9 +68,13 @@ func RunWalletSubscriptionRenewalOnce(limit int) (int, error) {
 	for _, contract := range contracts {
 		result, err := RenewWalletSubscriptionContract(contract.Id)
 		if err != nil {
-			return renewed, err
+			// One contract with corrupt or drifted facts must not starve every
+			// other wallet renewal (and the expiry/reset steps after this one).
+			// The contract stays due and is retried on the next tick.
+			common.SysError(fmt.Sprintf("wallet renewal skipped contract: contract_id=%d user_id=%d error=%q", contract.Id, contract.UserId, err.Error()))
+			continue
 		}
-		if result.Renewed {
+		if result != nil && result.Renewed {
 			renewed++
 		}
 	}
@@ -347,6 +351,12 @@ func loadReachedWalletCatalogRenewalTx(tx *gorm.DB, contract *model.UserSubscrip
 	if intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration {
 		return nil, nil
 	}
+	// Wallet cutovers have no provider leg: only a "scheduled" intent is a
+	// cutover. Applied, superseded, failed or needs_attention intents left as
+	// the latest intent mean "renew the current plan normally".
+	if intent.Status != model.SubscriptionChangeIntentStatusScheduled {
+		return nil, nil
+	}
 	if contract.CurrentProviderBindingId != 0 ||
 		(contract.PaymentMode != model.SubscriptionPaymentModePrepaid && contract.PaymentMode != model.SubscriptionPaymentModeBalanceOnePeriod) {
 		return nil, errors.New("wallet catalog migration contract payment facts drifted")
@@ -360,23 +370,18 @@ func loadReachedWalletCatalogRenewalTx(tx *gorm.DB, contract *model.UserSubscrip
 	if !walletRenewalCurrentEntitlementMatchesContract(&currentEntitlement, contract) {
 		return nil, errors.New("wallet catalog migration current entitlement drifted")
 	}
-	if intent.Status != model.SubscriptionChangeIntentStatusScheduled || intent.ContractId != contract.Id || intent.UserId != contract.UserId ||
+	if intent.ContractId != contract.Id || intent.UserId != contract.UserId ||
 		intent.FromPlanId != contract.CurrentPlanId || intent.ToPlanId <= 0 || intent.ToPlanId != contract.PendingPlanId ||
 		intent.EffectiveAt != contract.PendingEffectiveAt || intent.EffectiveAt != contract.CurrentPeriodEnd ||
 		intent.EffectiveAt > common.GetTimestamp() || intent.PaymentMode != contract.PaymentMode || intent.ProviderBindingId != 0 || intent.CatalogMigrationBatchId == nil {
 		return nil, errors.New("wallet catalog migration intent facts drifted")
 	}
-	sandbox := catalogMigrationRuntimeSandboxConfig()
-	if err := ValidateCatalogMigrationCommonSandbox(sandbox, contract.Id); err != nil {
-		return nil, err
-	}
 	var batch model.SubscriptionCatalogMigrationBatch
 	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
 		return nil, err
 	}
-	if !batch.SandboxOnly || batch.Livemode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
-		batch.ServiceName != strings.TrimSpace(sandbox.ServiceName) {
-		return nil, errors.New("wallet catalog migration sandbox facts drifted")
+	if err := validateCatalogMigrationBatchRuntimeFacts(catalogMigrationRuntimeSandboxConfig(), &batch); err != nil {
+		return nil, err
 	}
 	snapshot, err := DecodeRecurringPlanSnapshotV1(intent.TargetPlanSnapshot)
 	if err != nil {
@@ -756,7 +761,7 @@ func walletRenewalCurrentEntitlementMatchesContract(entitlement *model.UserSubsc
 		entitlement.Id == contract.CurrentEntitlementId &&
 		entitlement.ContractId == contract.Id &&
 		entitlement.UserId == contract.UserId &&
-		entitlement.Status == model.SubscriptionEntitlementStatusActive &&
+		walletRenewalEntitlementStatusIsCurrent(entitlement, contract) &&
 		entitlement.CurrentSlot != nil &&
 		*entitlement.CurrentSlot == 1 &&
 		entitlement.PlanId == contract.CurrentPlanId &&
@@ -764,6 +769,19 @@ func walletRenewalCurrentEntitlementMatchesContract(entitlement *model.UserSubsc
 		entitlement.StartTime == contract.CurrentPeriodStart &&
 		entitlement.EndTime == contract.CurrentPeriodEnd &&
 		entitlement.PaymentMode == contract.PaymentMode
+}
+
+// walletRenewalEntitlementStatusIsCurrent accepts an active entitlement, and
+// an expired one only while the contract is paused for insufficient balance:
+// the expiry task flips the entitlement before the user tops up, and the
+// paused contract must still be able to renew (and cut over) afterwards.
+func walletRenewalEntitlementStatusIsCurrent(entitlement *model.UserSubscription, contract *model.UserSubscriptionContract) bool {
+	if entitlement.Status == model.SubscriptionEntitlementStatusActive {
+		return true
+	}
+	return entitlement.Status == "expired" &&
+		contract.RenewalStatus == model.SubscriptionRenewalStatusPausedInsufficientBalance &&
+		contract.Status == model.SubscriptionContractStatusActive
 }
 
 func walletRenewalDuplicateFactsError(format string, args ...interface{}) error {
@@ -781,6 +799,14 @@ func walletContractIsRenewable(contract model.UserSubscriptionContract) bool {
 func pauseWalletCatalogRenewalForBalanceTx(tx *gorm.DB, contract *model.UserSubscriptionContract, result *WalletSubscriptionRenewalResult) error {
 	if tx == nil || contract == nil {
 		return errors.New("subscription renewal facts are incomplete")
+	}
+	if contract.RenewalStatus == model.SubscriptionRenewalStatusPausedInsufficientBalance {
+		// Already waiting for a top-up; an identical update would report zero
+		// affected rows on MySQL and be mistaken for a concurrent change.
+		if result != nil {
+			result.PausedStatus = model.SubscriptionRenewalStatusPausedInsufficientBalance
+		}
+		return nil
 	}
 	update := tx.Model(&model.UserSubscriptionContract{}).
 		Where("id = ? AND status = ?", contract.Id, model.SubscriptionContractStatusActive).

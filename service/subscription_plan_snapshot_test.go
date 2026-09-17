@@ -83,10 +83,10 @@ func TestRecurringPlanSnapshotV1RejectsPlanAndStripeDrift(t *testing.T) {
 		changed.UnitAmount++
 		require.ErrorContains(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed), "amount")
 	})
-	t.Run("live", func(t *testing.T) {
+	t.Run("live mode is not a drift", func(t *testing.T) {
 		changed := *price
 		changed.Livemode = true
-		require.ErrorContains(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed), "test mode")
+		require.NoError(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed))
 	})
 	t.Run("interval", func(t *testing.T) {
 		changed := *price
@@ -95,6 +95,19 @@ func TestRecurringPlanSnapshotV1RejectsPlanAndStripeDrift(t *testing.T) {
 		changed.Recurring = &recurring
 		require.ErrorContains(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed), "monthly")
 	})
+}
+
+func TestRecurringPlanSnapshotV1AcceptsLiveModePrice(t *testing.T) {
+	// Production cutovers run against live Stripe Prices. Mode consistency is
+	// enforced by ValidateCatalogMigrationStripeSandbox, not by the snapshot.
+	plan, price := recurringSnapshotFixture()
+	live := *price
+	live.Livemode = true
+	snapshot, err := FreezeRecurringPlanSnapshotV1(plan, &live)
+	require.NoError(t, err)
+	require.Equal(t, plan.Id, snapshot.PlanID)
+	require.NoError(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &live))
+	require.NoError(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, price))
 }
 
 func TestFreezeLegacyRecurringPlanSnapshotV1RequiresExactOwnershipAndMoney(t *testing.T) {
@@ -242,6 +255,15 @@ func TestCatalogMigrationSandboxGuards(t *testing.T) {
 			require.Error(t, ValidateCatalogMigrationStripeSandbox(changedConfig, changedFacts))
 		})
 	}
+}
+
+func TestCatalogMigrationProductionLiveGuards(t *testing.T) {
+	config := CatalogMigrationSandboxConfig{DeploymentEnvironment: "production", ServiceName: "newapi-console", FeatureEnabled: true, ProductionEnabled: true, AllowedContractIDs: []int64{17}, StripeSecret: "rk_live_catalog", StripePublishableKey: "pk_live_catalog"}
+	facts := CatalogMigrationStripeSandboxFacts{ContractID: 17, BindingLivemode: true, SubscriptionLivemode: true, CurrentPriceLivemode: true, TargetPriceLivemode: true, BindingSubscriptionID: "sub_current", SubscriptionID: "sub_current", BindingCustomerID: "cus_current", SubscriptionCustomerID: "cus_current", BindingCurrentPriceID: "price_old", SubscriptionPriceID: "price_old", ExpectedTargetPriceID: "price_new", TargetPriceID: "price_new"}
+	require.NoError(t, ValidateCatalogMigrationCommonSandbox(config, 17))
+	require.NoError(t, ValidateCatalogMigrationStripeSandbox(config, facts))
+	config.ProductionEnabled = false
+	require.Error(t, ValidateCatalogMigrationCommonSandbox(config, 17))
 }
 
 func recurringSnapshotFixture() (*model.SubscriptionPlan, *stripe.Price) {

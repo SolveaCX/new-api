@@ -70,8 +70,17 @@ func prepareMissingRegistrationIPNewUserBonus(user *User) {
 	user.NewUserBonusGiven = false
 }
 
-func grantNewUserBonusInTx(tx *gorm.DB, user *User) error {
-	user.Quota = common.QuotaForNewUser
+const FluereNewUserBonusUSD = 15.0
+
+func NewUserBonusQuotaForUser(user *User) int {
+	if user != nil && user.IsFluereChannel() {
+		return int(FluereNewUserBonusUSD * common.QuotaPerUnit)
+	}
+	return common.QuotaForNewUser
+}
+
+func grantNewUserBonusInTx(tx *gorm.DB, user *User, bonusQuota int) error {
+	user.Quota = bonusQuota
 	user.NewUserBonusGiven = true
 	return tx.Model(&User{}).
 		Where("id = ?", user.Id).
@@ -82,7 +91,8 @@ func grantNewUserBonusInTx(tx *gorm.DB, user *User) error {
 }
 
 func claimRegistrationIPNewUserBonusInTx(tx *gorm.DB, user *User) error {
-	if common.QuotaForNewUser <= 0 || user == nil || user.Id == 0 || user.RegistrationIP == "" {
+	bonusQuota := NewUserBonusQuotaForUser(user)
+	if bonusQuota <= 0 || user == nil || user.Id == 0 || user.RegistrationIP == "" {
 		return nil
 	}
 	if common.RedisEnabled && common.RDB != nil {
@@ -94,13 +104,13 @@ func claimRegistrationIPNewUserBonusInTx(tx *gorm.DB, user *User) error {
 		if !claimed {
 			return nil
 		}
-		if err := grantNewUserBonusInTx(tx, user); err != nil {
+		if err := grantNewUserBonusInTx(tx, user, bonusQuota); err != nil {
 			releaseRegistrationIPNewUserBonusRedisClaim(context.Background(), user)
 			return err
 		}
 		return nil
 	}
-	return claimRegistrationIPNewUserBonusInDBInTx(tx, user)
+	return claimRegistrationIPNewUserBonusInDBInTx(tx, user, bonusQuota)
 }
 
 func claimRegistrationIPNewUserBonusInRedis(ctx context.Context, user *User) (bool, error) {
@@ -145,7 +155,7 @@ func newUserBonusRegistrationIPRedisKey(registrationIP string) string {
 	return newUserBonusRegistrationIPRedisKeyPref + registrationIP
 }
 
-func claimRegistrationIPNewUserBonusInDBInTx(tx *gorm.DB, user *User) error {
+func claimRegistrationIPNewUserBonusInDBInTx(tx *gorm.DB, user *User, bonusQuota int) error {
 	now := common.GetTimestamp()
 	windowStart := now - int64(newUserBonusRegistrationIPWindow/time.Second)
 	for slot := 1; slot <= maxNewUserBonusClaimsPerRegistrationIP; slot++ {
@@ -160,7 +170,7 @@ func claimRegistrationIPNewUserBonusInDBInTx(tx *gorm.DB, user *User) error {
 			return insert.Error
 		}
 		if insert.RowsAffected > 0 {
-			return grantNewUserBonusInTx(tx, user)
+			return grantNewUserBonusInTx(tx, user, bonusQuota)
 		}
 
 		refresh := tx.Model(&NewUserBonusClaim{}).
@@ -173,7 +183,7 @@ func claimRegistrationIPNewUserBonusInDBInTx(tx *gorm.DB, user *User) error {
 			return refresh.Error
 		}
 		if refresh.RowsAffected > 0 {
-			return grantNewUserBonusInTx(tx, user)
+			return grantNewUserBonusInTx(tx, user, bonusQuota)
 		}
 	}
 	return nil

@@ -171,7 +171,7 @@ func TestResolveStripeTopUpCheckoutUsesTierMultiCurrencyPrice(t *testing.T) {
 	require.Equal(t, 10.0, checkout.Money)
 }
 
-func TestResolveStripeTopUpCheckoutRejectsPriceAmountNotMatchingPackage(t *testing.T) {
+func TestResolveStripeTopUpCheckoutUsesConfiguredPriceAmountInsteadOfHardcodedPackageAmount(t *testing.T) {
 	originalTopUpPriceIds := setting.StripeTopUpPriceIds
 	paymentSetting := operation_setting.GetPaymentSetting()
 	originalAmountOptions := append([]int(nil), paymentSetting.AmountOptions...)
@@ -189,12 +189,46 @@ func TestResolveStripeTopUpCheckoutRejectsPriceAmountNotMatchingPackage(t *testi
 		return 1000, nil
 	}
 
-	_, err := resolveStripeTopUpCheckout(&StripePayRequest{
+	checkout, err := resolveStripeTopUpCheckout(&StripePayRequest{
 		Amount:         20,
 		StripeCurrency: "usd",
 	}, 20, "default")
 
-	require.EqualError(t, err, "Stripe Price price_multi_currency_20 has invalid USD amount for 20 package: expected 2000 got 1000")
+	require.NoError(t, err)
+	require.Equal(t, "price_multi_currency_20", checkout.PriceId)
+	require.Equal(t, int64(1000), checkout.AmountMinor)
+	require.Equal(t, int64(1), checkout.Quantity)
+	require.Equal(t, 20.0, checkout.Money)
+}
+
+func TestResolveStripeTopUpCheckoutAllowsConfiguredCustomPresetAmount(t *testing.T) {
+	originalTopUpPriceIDs := setting.StripeTopUpPriceIds
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalAmountOptions := append([]int(nil), paymentSetting.AmountOptions...)
+	originalPriceAmount := stripePriceAmountMinorForCheckoutCurrency
+	t.Cleanup(func() {
+		setting.StripeTopUpPriceIds = originalTopUpPriceIDs
+		paymentSetting.AmountOptions = originalAmountOptions
+		stripePriceAmountMinorForCheckoutCurrency = originalPriceAmount
+	})
+	setting.StripeTopUpPriceIds = `{"30":"price_custom_30"}`
+	paymentSetting.AmountOptions = []int{30}
+	stripePriceAmountMinorForCheckoutCurrency = func(priceID string, requestedCurrency string) (int64, error) {
+		require.Equal(t, "price_custom_30", priceID)
+		require.Equal(t, "USD", requestedCurrency)
+		return 2750, nil
+	}
+
+	checkout, err := resolveStripeTopUpCheckout(&StripePayRequest{
+		Amount:         30,
+		StripeCurrency: "usd",
+	}, 30, "default")
+
+	require.NoError(t, err)
+	require.Equal(t, "price_custom_30", checkout.PriceId)
+	require.Equal(t, int64(2750), checkout.AmountMinor)
+	require.Equal(t, int64(1), checkout.Quantity)
+	require.Equal(t, 30.0, checkout.Money)
 }
 
 func TestResolveStripeTopUpCheckoutRejectsMissingCurrency(t *testing.T) {
@@ -274,53 +308,11 @@ func TestStripePriceAmountMinorForCurrency(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestStripeTopUpPriceContractDrivesSupportedCurrenciesAndAmounts(t *testing.T) {
-	tests := []struct {
-		currency string
-		amounts  map[int64]int64
-	}{
-		{
-			currency: "USD",
-			amounts: map[int64]int64{
-				10: 1000, 20: 2000, 50: 5000, 100: 10000, 200: 20000,
-			},
-		},
-		{
-			currency: "JPY",
-			amounts: map[int64]int64{
-				10: 1500, 20: 3000, 50: 7500, 100: 15000, 200: 30000,
-			},
-		},
-		{
-			currency: "BRL",
-			amounts: map[int64]int64{
-				10: 4990, 20: 9990, 50: 24990, 100: 49990, 200: 99090,
-			},
-		},
-		{
-			currency: "INR",
-			amounts: map[int64]int64{
-				10: 89900, 20: 179900, 50: 449900, 100: 899900, 200: 1799000,
-			},
-		},
+func TestStripeTopUpPriceContractDrivesSupportedCurrencies(t *testing.T) {
+	for _, currency := range []string{"USD", "JPY", "BRL", "INR"} {
+		require.True(t, stripeTopUpCurrencySupported(" "+strings.ToLower(currency)+" "))
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.currency, func(t *testing.T) {
-			require.True(t, stripeTopUpCurrencySupported(" "+strings.ToLower(tt.currency)+" "))
-			for packageAmount, wantMinor := range tt.amounts {
-				gotMinor, ok := expectedStripeTopUpAmountMinor(tt.currency, packageAmount)
-				require.True(t, ok)
-				require.Equal(t, wantMinor, gotMinor)
-			}
-		})
-	}
-
 	require.False(t, stripeTopUpCurrencySupported("EUR"))
-	_, ok := expectedStripeTopUpAmountMinor("EUR", 20)
-	require.False(t, ok)
-	_, ok = expectedStripeTopUpAmountMinor("USD", 15)
-	require.False(t, ok)
 }
 
 func TestGetStripePriceAmountMinorForCurrencyExpandsCurrencyOptions(t *testing.T) {
@@ -354,6 +346,53 @@ func TestGetStripePriceAmountMinorForCurrencyExpandsCurrencyOptions(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, int64(1500), amountMinor)
 	require.Contains(t, expands, "currency_options")
+}
+
+func TestGetStripePriceAmountMinorForCurrencyRejectsMissingAndNonPositiveAmounts(t *testing.T) {
+	originalAPISecret := setting.StripeApiSecret
+	originalPriceGetter := stripePriceGetter
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalAPISecret
+		stripePriceGetter = originalPriceGetter
+	})
+	setting.StripeApiSecret = "sk_test_123"
+
+	tests := []struct {
+		name       string
+		currency   string
+		price      *stripe.Price
+		wantErrSub string
+	}{
+		{
+			name:       "missing currency option",
+			currency:   "BRL",
+			price:      &stripe.Price{Currency: stripe.CurrencyUSD, UnitAmount: 1000},
+			wantErrSub: "does not support BRL",
+		},
+		{
+			name:       "zero amount",
+			currency:   "USD",
+			price:      &stripe.Price{Currency: stripe.CurrencyUSD, UnitAmount: 0},
+			wantErrSub: "invalid USD amount",
+		},
+		{
+			name:       "negative currency option",
+			currency:   "JPY",
+			price:      &stripe.Price{Currency: stripe.CurrencyUSD, UnitAmount: 1000, CurrencyOptions: map[string]*stripe.PriceCurrencyOptions{"jpy": {UnitAmount: -1}}},
+			wantErrSub: "invalid JPY amount",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stripePriceGetter = func(string, *stripe.PriceParams) (*stripe.Price, error) {
+				return tt.price, nil
+			}
+
+			_, err := getStripePriceAmountMinorForCurrency("price_configured", tt.currency)
+			require.ErrorContains(t, err, tt.wantErrSub)
+		})
+	}
 }
 
 func TestResolveStripeTopUpCheckoutRejectsUnsupportedCurrencyPackage(t *testing.T) {
