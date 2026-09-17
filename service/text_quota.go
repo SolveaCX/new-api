@@ -507,6 +507,7 @@ func postTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	recordSessionStoreUsage(ctx, relayInfo.UserId, summary.ModelName, summary.PromptTokens, summary.CompletionTokens, summary.Quota)
 	perfmetrics.RecordChannelTokens(relayInfo, int64(summary.PromptTokens), int64(summary.CompletionTokens))
 	if recordRelaySample {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens), nil)
