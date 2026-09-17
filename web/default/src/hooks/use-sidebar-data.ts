@@ -117,6 +117,11 @@ export function buildSidebarData(
             url: '/api-marketplace',
             icon: Wrench,
           },
+          {
+            title: t('Compute Market'),
+            url: '/compute/market',
+            icon: Cpu,
+          },
         ],
       },
       {

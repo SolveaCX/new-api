@@ -483,6 +483,32 @@ func SetApiRouter(router *gin.Engine) {
 		// User-facing GPU offer catalog (whitelabeled). Standalone route to avoid
 		// a Gin static/param conflict with /compute/instances/:id.
 		apiRouter.GET("/compute/gpu-offers", middleware.UserAuth(), controller.GetUserGpuOffers)
+
+		// Compute Market: buyer RFQs, supplier bids, anonymous matching.
+		// Static paths are registered before the :id params (Gin conflict rule).
+		computeMarketRoute := apiRouter.Group("/compute/market")
+		computeMarketRoute.Use(middleware.UserAuth())
+		{
+			computeMarketRoute.POST("/rfqs/parse", controller.ParseComputeRFQ)
+			computeMarketRoute.GET("/rfqs/open", controller.ListOpenComputeRFQs)
+			computeMarketRoute.GET("/rfqs", controller.ListMyComputeRFQs)
+			computeMarketRoute.POST("/rfqs", controller.CreateComputeRFQ)
+			computeMarketRoute.GET("/rfqs/:id", controller.GetComputeRFQ)
+			computeMarketRoute.POST("/rfqs/:id/bids", controller.PlaceComputeBid)
+			computeMarketRoute.POST("/rfqs/:id/accept", controller.AcceptComputeBid)
+			computeMarketRoute.POST("/rfqs/:id/extend", controller.ExtendComputeRFQ)
+			computeMarketRoute.POST("/rfqs/:id/raise", controller.RaiseComputeRFQCeiling)
+			computeMarketRoute.POST("/rfqs/:id/cancel", controller.CancelComputeRFQ)
+			computeMarketRoute.POST("/bids/:id/withdraw", controller.WithdrawComputeBid)
+			computeMarketRoute.GET("/supplier", controller.GetMyComputeSupplier)
+			computeMarketRoute.POST("/supplier", controller.UpsertMyComputeSupplier)
+		}
+		computeMarketAdminRoute := apiRouter.Group("/compute/market/admin")
+		computeMarketAdminRoute.Use(middleware.AdminAuth())
+		{
+			computeMarketAdminRoute.GET("/suppliers", controller.ListComputeSuppliers)
+			computeMarketAdminRoute.POST("/suppliers/:user_id/level", controller.SetComputeSupplierLevel)
+		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
