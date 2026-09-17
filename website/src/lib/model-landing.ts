@@ -1980,6 +1980,8 @@ export type ModelLandingKey =
   | "Seedance-2.5 prompts that work"
   | "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there."
   | "Copy Prompt"
+  | "Copied"
+  | "Copy failed"
   | "Make one like this"
   | "Why Flatkey"
   | "Why run seedance-2.5 through Flatkey"
@@ -4337,6 +4339,8 @@ const en: Record<ModelLandingKey, string> = {
   "Seedance-2.5 prompts that work": "Seedance-2.5 prompts that work",
   "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.",
   "Copy Prompt": "Copy Prompt",
+  "Copied": "Copied",
+  "Copy failed": "Copy failed",
   "Make one like this": "Make one like this",
   "Why Flatkey": "Why Flatkey",
   "Why run seedance-2.5 through Flatkey": "Why run seedance-2.5 through Flatkey",
@@ -7568,9 +7572,13 @@ const modelDetailUiCopy: Partial<Record<Locale, Record<string, string>>> = {
 const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = {
   en: {
     "Add credits": "Add credits",
+    "Copied": "Copied",
+    "Copy failed": "Copy failed",
   },
   zh: {
     "Add credits": "充值余额",
+    "Copied": "已复制",
+    "Copy failed": "复制失败",
     vs: "对比",
     "Flatkey Router": "Flatkey 路由器",
     Endpoint: "接口",
@@ -7597,6 +7605,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   es: {
     "Add credits": "Añadir crédito",
+    "Copied": "Copiado",
+    "Copy failed": "No se pudo copiar",
     vs: "frente a",
     "Flatkey Router": "Router de Flatkey",
     "Configure a {{model}} request on the public page. Flatkey saves the draft locally, then opens the console so you can run it with your account and API key.": "Configura una solicitud de {{model}} en la página pública. Flatkey guarda el borrador localmente y abre la consola para que puedas ejecutarla con tu cuenta y clave API.",
@@ -7665,6 +7675,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   fr: {
     "Add credits": "Ajouter des crédits",
+    "Copied": "Copié",
+    "Copy failed": "Copie impossible",
     vs: "vs",
     "Flatkey Router": "Routeur Flatkey",
     "/ image": "/ image",
@@ -7734,6 +7746,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   pt: {
     "Add credits": "Adicionar créditos",
+    "Copied": "Copiado",
+    "Copy failed": "Falha ao copiar",
     vs: "vs",
     "Flatkey Router": "Roteador Flatkey",
     Endpoint: "Endpoint",
@@ -7760,6 +7774,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   ru: {
     "Add credits": "Пополнить баланс",
+    "Copied": "Скопировано",
+    "Copy failed": "Не удалось скопировать",
     vs: "против",
     "Flatkey Router": "Роутер Flatkey",
     Endpoint: "Эндпоинт",
@@ -7786,6 +7802,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   ja: {
     "Add credits": "クレジットを追加",
+    "Copied": "コピーしました",
+    "Copy failed": "コピーできませんでした",
     "Flatkey Router": "Flatkeyルーター",
     vs: "対",
     Endpoint: "エンドポイント",
@@ -7812,6 +7830,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   vi: {
     "Add credits": "Nạp thêm tín dụng",
+    "Copied": "Đã sao chép",
+    "Copy failed": "Không thể sao chép",
     vs: "so với",
     "Flatkey Router": "Router Flatkey",
     "/ request": "/ yêu cầu",
@@ -7840,6 +7860,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   de: {
     "Add credits": "Guthaben hinzufügen",
+    "Copied": "Kopiert",
+    "Copy failed": "Kopieren fehlgeschlagen",
     vs: "gegenüber",
     "Flatkey Router": "Flatkey-Router",
     Endpoint: "Endpunkt",
@@ -7866,6 +7888,8 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
   id: {
     "Add credits": "Tambah kredit",
+    "Copied": "Tersalin",
+    "Copy failed": "Gagal menyalin",
     Input: "Masukan",
     Output: "Keluaran",
     vs: "vs",

@@ -3115,6 +3115,38 @@ function PromptLibrarySection(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const [failedPosters, setFailedPosters] = useState<Record<string, boolean>>({});
+  const [copyFeedback, setCopyFeedback] = useState<{ key: string; status: "copied" | "failed" } | null>(null);
+  const copyFeedbackTimeout = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (copyFeedbackTimeout.current !== null) window.clearTimeout(copyFeedbackTimeout.current);
+  }, []);
+
+  const copyPrompt = async (key: string, prompt: string) => {
+    let copied = false;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(prompt);
+      copied = true;
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = prompt;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      try {
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      } finally {
+        textArea.remove();
+      }
+    }
+    setCopyFeedback({ key, status: copied ? "copied" : "failed" });
+    if (copyFeedbackTimeout.current !== null) window.clearTimeout(copyFeedbackTimeout.current);
+    copyFeedbackTimeout.current = window.setTimeout(() => setCopyFeedback(null), 2000);
+  };
   const kind = props.config.generator?.kind;
   if (kind !== "image" && kind !== "video") return null;
   const items = buildPromptLibraryItems(props.config, props.examples, props.t, props.locale);
@@ -3193,10 +3225,14 @@ function PromptLibrarySection(props: {
                 <div className="prompt-actions">
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard?.writeText(item.prompt).catch(() => undefined)}
+                    onClick={() => void copyPrompt(item.key, item.prompt)}
                     className="outline-button"
+                    aria-live="polite"
+                    data-copy-status={copyFeedback?.key === item.key ? copyFeedback.status : undefined}
                   >
-                    {props.t(isPrototypeContent ? "Copy Prompt" : "Copy request")}
+                    {copyFeedback?.key === item.key
+                      ? props.t(copyFeedback.status === "copied" ? "Copied" : "Copy failed")
+                      : props.t(isPrototypeContent ? "Copy Prompt" : "Copy request")}
                   </button>
                   <a
                     href={consoleUrl("/dashboard/overview")}
