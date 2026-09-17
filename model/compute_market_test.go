@@ -286,3 +286,23 @@ func TestListRecentlyMatchedComputeRFQs(t *testing.T) {
 		t.Fatalf("expected no rows after since, got %d", len(old))
 	}
 }
+
+func TestFeaturedComputeRFQsPinToTop(t *testing.T) {
+	setupComputeMarketTestDB(t)
+	a := newTestRFQ(t, 40, 3.0)
+	b := newTestRFQ(t, 40, 3.0)
+	b.MatchingDeadline = a.MatchingDeadline + 3600
+	if err := b.save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetComputeRFQFeatured(b.Id, true); err != nil {
+		t.Fatal(err)
+	}
+	open, err := ListOpenComputeRFQs(41)
+	if err != nil || len(open) != 2 || open[0].Id != b.Id || !open[0].Featured {
+		t.Fatalf("featured not pinned: %v %+v", err, open)
+	}
+	if err := SetComputeRFQFeatured(999, true); err != gorm.ErrRecordNotFound {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}

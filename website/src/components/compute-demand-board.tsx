@@ -38,6 +38,7 @@ export type DemandBoardCopy = {
   perHour: string;
   liveNote: string;
   allLabel: string;
+  featured: string;
 };
 
 type Props = {
@@ -118,7 +119,11 @@ export function ComputeDemandBoard(props: Props) {
       fresh.lowest = 0;
       fresh.ageMinutes = 0;
       fresh.remainingMinutes = 24 * 60;
-      setRows((current) => [fresh, ...current.map((r) => ({ ...r, ageMinutes: r.ageMinutes + 1 }))].slice(0, 48));
+      setRows((current) => {
+        const pinned = current.filter((r) => r.featured);
+        const rest = current.filter((r) => !r.featured).map((r) => ({ ...r, ageMinutes: r.ageMinutes + 1 }));
+        return [...pinned, fresh, ...rest].slice(0, 48);
+      });
       setFreshId(fresh.id);
     }, props.liveIntervalMs);
     return () => window.clearInterval(timer);
@@ -133,7 +138,8 @@ export function ComputeDemandBoard(props: Props) {
       <div className={`cm-lane${reverse ? " cm-lane-rev" : ""}`} aria-hidden={reverse}>
         <div className="cm-track">
           {[...list, ...list].map((row, i) => (
-            <span className="cm-chip" key={`${row.id}-${i}`}>
+            <span className={`cm-chip${row.featured ? " cm-chip-featured" : ""}`} key={`${row.id}-${i}`}>
+              {row.featured && <span className="cm-featured">{copy.featured}</span>}
               <b>
                 {row.gpu} × {row.nodes}
               </b>
@@ -186,6 +192,7 @@ export function ComputeDemandBoard(props: Props) {
               <tr key={row.id} className={row.id === freshId ? "cm-fresh" : undefined}>
                 <td>
                   <b>RFQ-{row.id}</b>
+                  {row.featured && <span className="cm-featured">{copy.featured}</span>}
                   <small>{age(row.ageMinutes)}</small>
                 </td>
                 <td>
@@ -198,6 +205,7 @@ export function ComputeDemandBoard(props: Props) {
                 <td>
                   {row.termMonths} {copy.months}
                   <small>{row.region}</small>
+                  {row.paymentTerms && <small>{row.paymentTerms}</small>}
                 </td>
                 <td>
                   <em>≤ ${row.ceiling.toFixed(2)}</em>

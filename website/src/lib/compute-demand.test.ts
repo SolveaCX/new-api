@@ -9,6 +9,13 @@ import {
 } from "./compute-demand";
 
 describe("compute demand snapshot", () => {
+  test("featured request is pinned first", () => {
+    const rows = generateDemandSnapshot(10, 7);
+    expect(rows[0].featured).toBe(true);
+    expect(rows[0].termMonths).toBe(36);
+    expect(rows.slice(1).some((r) => r.featured)).toBe(false);
+  });
+
   test("is deterministic for a given seed", () => {
     const a = generateDemandSnapshot(30, 7);
     const b = generateDemandSnapshot(30, 7);
@@ -17,7 +24,7 @@ describe("compute demand snapshot", () => {
   });
 
   test("prices stay inside the market band for each GPU", () => {
-    for (const row of generateDemandSnapshot(200, 3)) {
+    for (const row of generateDemandSnapshot(200, 3).filter((r) => !r.featured)) {
       const band = GPU_PRICE_BANDS.find((b) => b[0] === row.gpu);
       expect(band).toBeDefined();
       expect(row.ceiling).toBeGreaterThanOrEqual(band![1]);

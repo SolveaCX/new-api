@@ -87,8 +87,10 @@ type ComputeRFQ struct {
 	MatchingDeadline int64  `json:"matching_deadline" gorm:"column:matching_deadline;bigint"`
 	Extensions       int    `json:"extensions" gorm:"default:0"`
 	AcceptedBidId    int    `json:"accepted_bid_id" gorm:"column:accepted_bid_id;default:0"`
-	CreatedTime      int64  `json:"created_time" gorm:"column:created_time;bigint"`
-	UpdatedTime      int64  `json:"updated_time" gorm:"column:updated_time;bigint"`
+	// Featured requests are pinned to the top of the marketplace (ops-curated).
+	Featured    bool  `json:"featured" gorm:"column:featured;index"`
+	CreatedTime int64 `json:"created_time" gorm:"column:created_time;bigint"`
+	UpdatedTime int64 `json:"updated_time" gorm:"column:updated_time;bigint"`
 
 	// Derived, never stored.
 	Code       string `json:"code" gorm:"-"`
@@ -223,7 +225,7 @@ func ListComputeRFQsByUser(userId int) ([]*ComputeRFQ, error) {
 func ListOpenComputeRFQs(viewerUserId int) ([]*ComputeRFQ, error) {
 	var rfqs []*ComputeRFQ
 	err := DB.Where("status in ?", []string{ComputeRFQStatusMatching, ComputeRFQStatusChoosing}).
-		Order("matching_deadline asc").Find(&rfqs).Error
+		Order("featured desc, matching_deadline asc").Find(&rfqs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -576,4 +578,16 @@ func ComputeRFQRegionsList(regions string) []string {
 		}
 	}
 	return out
+}
+
+// SetComputeRFQFeatured pins or unpins a request on the marketplace (admin).
+func SetComputeRFQFeatured(id int, featured bool) error {
+	res := DB.Model(&ComputeRFQ{}).Where("id = ?", id).Updates(map[string]any{"featured": featured, "updated_time": common.GetTimestamp()})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

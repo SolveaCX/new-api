@@ -190,7 +190,14 @@ function Detail(props: {
     <Card className='sticky top-4'>
       <CardContent className='flex flex-col gap-3 pt-5 text-sm'>
         <div className='flex items-center justify-between'>
-          <b>{rfq.code}</b>
+          <b>
+            {rfq.code}
+            {rfq.featured && (
+              <Badge className='ml-1 h-4 px-1.5 text-[10px]'>
+                {t('Featured')}
+              </Badge>
+            )}
+          </b>
           <div className='flex items-center gap-2'>
             <RFQStatusBadge status={rfq.status} />
             <button
@@ -618,6 +625,11 @@ export function Marketplace({ onRegister }: { onRegister: () => void }) {
                       >
                         <TableCell className='whitespace-nowrap'>
                           <b>{r.code}</b>
+                          {r.featured && (
+                            <Badge className='ml-1 h-4 px-1.5 text-[10px]'>
+                              {t('Featured')}
+                            </Badge>
+                          )}
                           <div className='text-muted-foreground text-xs'>
                             {r.buyer_alias}
                           </div>

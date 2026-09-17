@@ -26,6 +26,8 @@ export type DemandRow = {
   delivery: string;
   ageMinutes: number;
   remainingMinutes: number;
+  featured?: boolean;
+  paymentTerms?: string;
 };
 
 export const GPU_PRICE_BANDS: ReadonlyArray<readonly [string, number, number]> = [
@@ -98,12 +100,34 @@ export function generateDemandRow(index: number, random: () => number): DemandRo
   };
 }
 
-/** Deterministic snapshot, newest first. */
+/** Ops-curated featured request, pinned to the top of every board. */
+export const FEATURED_DEMAND: DemandRow = {
+  id: 1901,
+  gpu: "B300",
+  nodes: 16,
+  gpusPerNode: 8,
+  termMonths: 36,
+  region: "JP · SG · US-WEST",
+  ceiling: 4.5,
+  lowest: 0,
+  status: "matching",
+  bids: 0,
+  nickname: "Cedar Orca",
+  kind: "LLM lab",
+  delivery: "bare metal · IB 400G",
+  ageMinutes: 12,
+  remainingMinutes: 22 * 60,
+  featured: true,
+  paymentTerms: "3-year contract · 15% down payment",
+};
+
+/** Deterministic snapshot, featured first then newest. */
 export function generateDemandSnapshot(count = 40, seed = 7): DemandRow[] {
   const random = createSeededRandom(seed);
   const rows: DemandRow[] = [];
   for (let i = 0; i < count; i += 1) rows.push(generateDemandRow(i, random));
-  return rows.sort((a, b) => a.ageMinutes - b.ageMinutes);
+  rows.sort((a, b) => a.ageMinutes - b.ageMinutes);
+  return [FEATURED_DEMAND, ...rows];
 }
 
 export const totalGpus = (row: Pick<DemandRow, "nodes" | "gpusPerNode">) => row.nodes * row.gpusPerNode;
