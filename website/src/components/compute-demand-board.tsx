@@ -190,37 +190,37 @@ export function ComputeDemandBoard(props: Props) {
           <tbody>
             {rows.slice(0, props.maxRows ?? rows.length).map((row) => (
               <tr key={row.id} className={row.id === freshId ? "cm-fresh" : undefined}>
-                <td>
+                <td data-label={copy.colRequest} className="cm-c-req">
                   <b>RFQ-{row.id}</b>
                   {row.featured && <span className="cm-featured">{copy.featured}</span>}
                   <small>{age(row.ageMinutes)}</small>
                 </td>
-                <td>
+                <td data-label={copy.colSpec} className="cm-c-spec">
                   <b>
                     {row.gpu} × {row.nodes}
                   </b>{" "}
                   <small>= {totalGpus(row)} GPU</small>
                   <small>{row.delivery}</small>
                 </td>
-                <td>
+                <td data-label={copy.colTerm} className="cm-c-term">
                   {row.termMonths} {copy.months}
                   <small>{row.region}</small>
                   {row.paymentTerms && <small>{row.paymentTerms}</small>}
                 </td>
-                <td>
+                <td data-label={copy.colPrice} className="cm-c-price">
                   <em>≤ ${row.ceiling.toFixed(2)}</em>
                   <small>{row.lowest ? `${copy.lowest} $${row.lowest.toFixed(2)}` : copy.awaitingBid}</small>
                 </td>
-                <td>
+                <td data-label={copy.colStatus} className="cm-c-status">
                   <StatusPill row={row} copy={copy} />
                 </td>
-                <td>
+                <td data-label={copy.colBuyer} className="cm-c-buyer">
                   <Nickname row={row} copy={copy} joinHref={props.joinHref} />
                 </td>
-                <td>
+                <td data-label={copy.colValue} className="cm-c-value">
                   <b>{formatUsdCompact(annualValue(row))}</b>
                 </td>
-                <td>
+                <td className="cm-c-action">
                   <a className="cm-bid" href={props.bidHref}>
                     {copy.bid}
                   </a>
