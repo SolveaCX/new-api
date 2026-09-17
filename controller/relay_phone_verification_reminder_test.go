@@ -522,3 +522,14 @@ func TestRelayServesPhoneVerificationReminderWithoutBillingOrUpstream(t *testing
 	require.Empty(t, c.GetStringSlice("use_channel"), "reminder must not touch any channel")
 	require.Equal(t, 1, claims)
 }
+
+func TestPhoneVerificationReminderLinkFollowsTheme(t *testing.T) {
+	prev := common.GetTheme()
+	t.Cleanup(func() { common.SetTheme(prev) })
+
+	common.SetTheme("default")
+	require.Equal(t, "http://localhost:3000/profile", phoneVerificationReminderLink())
+
+	common.SetTheme("classic")
+	require.Equal(t, "http://localhost:3000/console/personal", phoneVerificationReminderLink())
+}
