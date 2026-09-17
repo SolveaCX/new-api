@@ -101,7 +101,9 @@ const VIDEO_PROFESSION_SETS: Record<string, ProfessionMediaSet> = {
   ),
   "seedance-2-0-pro": professionMediaSet(
     professionVideo(1, "20260917-seedance-2-0-pro-1c91976b11b9.mp4"),
-    professionVideo(2, "20260917-seedance-2-0-pro-c92c22884883.mp4"),
+    // The former gift-box animation never showed a recognizable product.
+    // Use the reviewed bottle commercial with its exact submitted prompt.
+    professionVideo(2, "20260917-seedance-2-0-76a2c347fdca.mp4"),
     professionVideo(3, "20260917-seedance-2-0-pro-f4ecc521d5dd.mp4"),
     professionVideo(4, "20260917-seedance-2-0-pro-4fc4e49cb987.mp4"),
     professionVideo(5, "20260917-seedance-2-0-pro-7eadd973935c.mp4"),
@@ -190,7 +192,7 @@ const VIDEO_PROFESSION_POSTER_SETS: Record<string, ProfessionMediaSet> = {
   ),
   "seedance-2-0-pro": professionMediaSet(
     "/assets/model-regeneration/20260917/model-showcase/video-profession-01/20260917-seedance-2-0-pro-1c91976b11b9.jpg",
-    "/assets/model-regeneration/20260917/model-showcase/video-profession-02/20260917-seedance-2-0-pro-c92c22884883.jpg",
+    "/assets/model-regeneration/20260917/model-showcase/video-profession-02/20260917-seedance-2-0-76a2c347fdca.jpg",
     "/assets/model-regeneration/20260917/model-showcase/video-profession-03/20260917-seedance-2-0-pro-f4ecc521d5dd.jpg",
     "/assets/model-regeneration/20260917/model-showcase/video-profession-04/20260917-seedance-2-0-pro-4fc4e49cb987.jpg",
     "/assets/model-regeneration/20260917/model-showcase/video-profession-05/20260917-seedance-2-0-pro-7eadd973935c.jpg",
@@ -397,7 +399,7 @@ const VIDEO_MODEL_ENGLISH_PROMPTS: Readonly<Record<string, EnglishVideoPromptSet
     "micro-drama-comic":
       "Creative direction: An anime courier in an orange coat and backpack runs through a rain-lit city after a floating white envelope. The camera tracks the chase past blue and red reflections until the courier reaches out and catches the envelope, followed by a brief sketch-like echo.\n\nVisual treatment: Anime action with blue-red wet reflections and a brief drawn motion echo.\n\nShot sequence: 1. Track the orange-coated courier chasing the white envelope.; 2. Keep the reaching hand and envelope together through the rain-lit chase.; 3. Show the catch clearly, then let the brief sketch echo fade.\n\nContinuity: Keep the character's face, clothing and key prop consistent; preserve screen direction across cuts.\nExclude: extra people or props, text, logos and watermarks.",
     "advertising-ecommerce":
-      "Creative direction: In an original hand-drawn night scene, a woman on a rooftop opens a small rectangular gift parcel. A restrained golden trail rises from inside, briefly lights her face and loops back toward the open parcel. End with the gift clearly visible in her hands against the dark blue skyline.\n\nVisual treatment: Hand-drawn illustrated product reveal with dark-blue city shapes, warm golden light and simple, readable character acting.\n\nShot sequence: 1. Establish her hands and the closed parcel; 2. Show the lid opening and the golden trail emerging from the package; 3. Hold the open gift in the foreground as the trail fades\n\nContinuity: Keep the product silhouette, cap or hinge, materials and prop positions stable; hold the final hero frame.\nExclude: extra people or props, text, logos and watermarks.",
+      "Creative direction: A coral-orange insulated bottle stands on a wet dark-teal studio surface beside a clear glass and a few ice cubes. One adult hand unscrews the cap and pours cold water over the ice, then sets the bottle beside the filled glass. End on a clean product hero frame with both bottle and glass visible.\n\nVisual treatment: Photoreal product commercial. A soft overhead key reveals the matte coral finish; a cool cyan edge light picks out condensation and the restrained floor reflection.\n\nShot sequence: 1. Open on condensation and ice in a tight detail shot; 2. Cut to a steady three-quarter view for the cap opening and single pour; 3. Settle on the bottle and chilled glass together, with the bottle silhouette unobstructed\n\nContinuity: Keep the product silhouette, cap or hinge, materials and prop positions stable; hold the final hero frame.\nExclude: extra people or props, text, logos and watermarks.",
     "film-concept-production":
       "Creative direction: A young caped figure stands on a moonlit rooftop and lowers a glowing lantern-like orb near the vents. The camera widens as clouds separate around a bright shape in the sky, keeping the small figure and luminous object in the same frame.\n\nVisual treatment: Stylized animated rooftop fantasy with cool moonlight and a warm luminous prop.\n\nShot sequence: 1. Frame the caped figure and glowing orb on the rooftop.; 2. Widen as the figure lowers the orb near the vents.; 3. Reveal the bright sky shape through separating clouds with the figure still in frame.\n\nContinuity: Maintain scene geography, subject scale and motivated light direction throughout the camera move.\nExclude: extra people or props, text, logos and watermarks.",
     "game-art-animation":
