@@ -22,6 +22,7 @@ notify.quota_warning_email: "{{.Warning}}。現在の残高は {{.Quota}} です
 notify.quota_warning_bark: "{{.Warning}}。残高：{{.Quota}}。お早めにチャージしてください。"
 notify.quota_warning_gotify: "{{.Warning}}。現在の残高は {{.Quota}} です。お早めにチャージしてください。"
 notify.phone_verification_required_for_api: "APIを使用する前に、電話番号を登録して認証してください。"
+notify.phone_verification_reminder_for_api: "【{{.SystemName}} からのお知らせ】お客様のアカウントにはまだ電話番号が登録されていません。コンソールにログインして登録してください：{{.Link}} 。このリクエストはモデルに転送されておらず、課金もされていません。そのまま再送信してください。このお知らせは 24 時間に最大 1 回表示されます。"
 
 # Phone verification messages
 user.phone_already_registered: "この電話番号はすでに登録されています"

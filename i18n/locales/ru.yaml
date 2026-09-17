@@ -22,6 +22,7 @@ notify.quota_warning_email: "{{.Warning}}. Ваш текущий остаток 
 notify.quota_warning_bark: "{{.Warning}}. Остаток квоты: {{.Quota}}. Пополните вовремя."
 notify.quota_warning_gotify: "{{.Warning}}. Ваш текущий остаток квоты: {{.Quota}}. Пополните вовремя."
 notify.phone_verification_required_for_api: "Привяжите и подтвердите номер телефона перед использованием API."
+notify.phone_verification_reminder_for_api: "[Уведомление {{.SystemName}}] К вашему аккаунту ещё не привязан номер телефона. Войдите в консоль и привяжите его: {{.Link}} . Этот запрос не был передан модели и не тарифицировался — просто отправьте его снова. Это уведомление показывается не чаще одного раза в 24 часа."
 
 # Phone verification messages
 user.phone_already_registered: "Этот номер телефона уже зарегистрирован"

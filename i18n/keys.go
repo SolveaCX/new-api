@@ -442,6 +442,10 @@ const (
 	MsgNotifyQuotaBark                       = "notify.quota_warning_bark"
 	MsgNotifyQuotaGotify                     = "notify.quota_warning_gotify"
 	MsgNotifyPhoneVerificationRequiredForAPI = "notify.phone_verification_required_for_api"
+	// MsgNotifyPhoneVerificationReminderForAPI is the body of the synthesized
+	// "model reply" served once per 24h to legacy PLG accounts without a
+	// verified phone. Template data: {{.SystemName}} {{.Link}}.
+	MsgNotifyPhoneVerificationReminderForAPI = "notify.phone_verification_reminder_for_api"
 )
 
 // Custom OAuth provider related messages

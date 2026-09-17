@@ -27,3 +27,25 @@ func TestPhoneAlreadyRegisteredMessageIsLocalizedAcrossSupportedLanguages(t *tes
 		})
 	}
 }
+
+func TestPhoneVerificationReminderForAPIIsLocalizedAcrossSupportedLanguages(t *testing.T) {
+	require.NoError(t, Init())
+
+	data := map[string]any{"SystemName": "Flatkey", "Link": "https://console.flatkey.ai/profile"}
+	langs := []string{LangEn, LangZhCN, LangZhTW, LangPt, LangEs, LangFr, LangRu, LangJa, LangVi}
+	seen := map[string]string{}
+	for _, lang := range langs {
+		t.Run(lang, func(t *testing.T) {
+			out := Translate(lang, MsgNotifyPhoneVerificationReminderForAPI, data)
+			require.NotEqual(t, MsgNotifyPhoneVerificationReminderForAPI, out)
+			require.NotContains(t, out, "{{")
+			require.NotContains(t, out, "<no value>")
+			require.Contains(t, out, "Flatkey")
+			require.Contains(t, out, "https://console.flatkey.ai/profile")
+			for other, text := range seen {
+				require.NotEqual(t, text, out, "%s and %s share the same text", lang, other)
+			}
+			seen[lang] = out
+		})
+	}
+}
