@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -13,48 +12,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAPIPhoneVerificationGateOnlyAppliesToPlgUsersAfterCutoff(t *testing.T) {
+// The gate rule itself is covered in model/phone_verification_policy_test.go.
+// These tests only verify the middleware wiring: it must consult the cached
+// user's CreatedAt so accounts created before the rollout start are exempt.
+func TestAPIPhoneVerificationGateOnlyAppliesToNewUnverifiedPlgAccounts(t *testing.T) {
 	originalSMS := common.SMSVerificationEnabled
 	common.SMSVerificationEnabled = true
 	t.Cleanup(func() { common.SMSVerificationEnabled = originalSMS })
-	cutoff := apiPhoneVerificationCutoff()
-	verifiedAt := cutoff.Unix()
+	start := model.PhoneVerificationRolloutStart().Unix()
 
 	tests := []struct {
 		name     string
 		user     *model.UserBase
-		now      time.Time
 		required bool
 	}{
-		{
-			name:     "before cutoff",
-			user:     &model.UserBase{Group: "plg"},
-			now:      cutoff.Add(-time.Second),
-			required: false,
-		},
-		{
-			name:     "at cutoff",
-			user:     &model.UserBase{Group: "plg"},
-			now:      cutoff,
-			required: true,
-		},
-		{
-			name:     "verified plg user",
-			user:     &model.UserBase{Group: "plg", PhoneNumber: "+14155550123", PhoneVerifiedAt: verifiedAt},
-			now:      cutoff.Add(time.Hour),
-			required: false,
-		},
-		{
-			name:     "non plg user",
-			user:     &model.UserBase{Group: "enterprise"},
-			now:      cutoff.Add(time.Hour),
-			required: false,
-		},
+		{name: "old plg account is exempt", user: &model.UserBase{Group: "plg", CreatedAt: start - 1}, required: false},
+		{name: "legacy plg account without created_at is exempt", user: &model.UserBase{Group: "plg"}, required: false},
+		{name: "new plg account must verify", user: &model.UserBase{Group: "plg", CreatedAt: start}, required: true},
+		{name: "new verified plg account passes", user: &model.UserBase{Group: "plg", CreatedAt: start, PhoneNumber: "+14155550123", PhoneVerifiedAt: start + 1}, required: false},
+		{name: "new non plg account passes", user: &model.UserBase{Group: "enterprise", CreatedAt: start}, required: false},
+		{name: "nil user never gated", user: nil, required: false},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.required, apiPhoneVerificationRequired(tt.now, tt.user))
+			require.Equal(t, tt.required, tt.user.PhoneVerificationRequired())
 		})
 	}
 }
@@ -63,7 +44,7 @@ func TestAPIPhoneVerificationGateDisabledWithSMSFeature(t *testing.T) {
 	original := common.SMSVerificationEnabled
 	t.Cleanup(func() { common.SMSVerificationEnabled = original })
 	common.SMSVerificationEnabled = false
-	require.False(t, apiPhoneVerificationRequired(apiPhoneVerificationCutoff().Add(time.Hour), &model.UserBase{Group: "plg"}))
+	require.False(t, (&model.UserBase{Group: "plg", CreatedAt: model.PhoneVerificationRolloutStart().Unix()}).PhoneVerificationRequired())
 }
 
 func TestAPIPhoneVerificationNotifyIsLocalized(t *testing.T) {

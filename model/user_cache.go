@@ -20,6 +20,7 @@ type UserBase struct {
 	Email           string `json:"email"`
 	PhoneNumber     string `json:"phone_number"`
 	PhoneVerifiedAt int64  `json:"phone_verified_at"`
+	CreatedAt       int64  `json:"created_at"`
 	Quota           int    `json:"quota"`
 	Status          int    `json:"status"`
 	Username        string `json:"username"`
@@ -55,8 +56,10 @@ func (user *UserBase) GetSetting() dto.UserSetting {
 // v2 added IsEnterprise to UserBase.
 // v3 added EmailVerifiedAt and Role to UserBase (email-verification enforcement).
 // v4 added phone verification fields for the API phone gate.
+// v5 added CreatedAt so the phone gate can exempt accounts created before the
+// rollout start without a DB round-trip.
 func getUserCacheKey(userId int) string {
-	return fmt.Sprintf("user:v4:%d", userId)
+	return fmt.Sprintf("user:v5:%d", userId)
 }
 
 // invalidateUserCache clears user cache
@@ -125,6 +128,7 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 		Email:           user.Email,
 		PhoneNumber:     user.PhoneNumber,
 		PhoneVerifiedAt: user.PhoneVerifiedAt,
+		CreatedAt:       user.CreatedAt,
 		IsEnterprise:    user.IsEnterprise,
 		EmailVerifiedAt: user.EmailVerifiedAt,
 		Role:            user.Role,
