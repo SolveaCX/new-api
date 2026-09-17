@@ -17,6 +17,8 @@ export type ModelSelectorOption = {
   price?: number
   releaseDate?: string
   featuredOrder?: number
+  tags?: string
+  displayWeight?: number
 }
 
 function promotionPriority(
@@ -51,13 +53,25 @@ function compareSearchMetadata(a: ModelSelectorOption, b: ModelSelectorOption) {
   return a.label.localeCompare(b.label, undefined, { numeric: true })
 }
 
+function compareConfiguredTags(a: ModelSelectorOption, b: ModelSelectorOption) {
+  const aTagged = Boolean(a.tags?.trim())
+  const bTagged = Boolean(b.tags?.trim())
+  return (
+    Number(bTagged) - Number(aTagged) ||
+    (bTagged ? (b.displayWeight ?? 0) : 0) -
+      (aTagged ? (a.displayWeight ?? 0) : 0)
+  )
+}
+
 /** Match the Available Models list: free, discounted, then hot campaigns. */
 export function sortModelOptionsForDefault(
   models: readonly ModelSelectorOption[]
 ): ModelSelectorOption[] {
   const order: ModelPromotion[] = ['free', 'limited', 'hot']
   return [...models].sort(
-    (a, b) => promotionPriority(a, order) - promotionPriority(b, order)
+    (a, b) =>
+      compareConfiguredTags(a, b) ||
+      promotionPriority(a, order) - promotionPriority(b, order)
   )
 }
 
@@ -68,6 +82,8 @@ export function sortModelOptionsForSearch(
   const order: ModelPromotion[] = ['new', 'free', 'limited', 'hot']
   return [...models].sort((a, b) => {
     const rankDiff = promotionPriority(a, order) - promotionPriority(b, order)
-    return rankDiff || compareSearchMetadata(a, b)
+    return (
+      compareConfiguredTags(a, b) || rankDiff || compareSearchMetadata(a, b)
+    )
   })
 }

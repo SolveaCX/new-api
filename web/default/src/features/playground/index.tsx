@@ -50,7 +50,7 @@ import {
 import {
   getPlaygroundConversation,
   getPlaygroundModelPricing,
-  getUserModels,
+  getPlaygroundModelCatalog,
   getUserGroups,
   type PlaygroundModelPricing,
 } from './api'
@@ -273,11 +273,11 @@ export function Playground({
   // Load the backend-authorized models that are also allowed by the
   // administrator's Playground display policy. Capability filtering remains
   // separate so supported handoff models can still be validated before use.
-  const { data: availableModelsData, isLoading: isLoadingModels } = useQuery({
-    queryKey: ['playground-models', config.group],
+  const { data: availableCatalogData, isLoading: isLoadingModels } = useQuery({
+    queryKey: ['playground-model-catalog', config.group],
     queryFn: async () => {
       try {
-        return await getUserModels(config.group)
+        return await getPlaygroundModelCatalog(config.group)
       } catch (error) {
         toast.error(
           error instanceof Error
@@ -288,6 +288,11 @@ export function Playground({
       }
     },
   })
+
+  const availableModelsData = useMemo(
+    () => availableCatalogData?.map((model) => model.id),
+    [availableCatalogData]
+  )
 
   const { data: publicModelPricingData } = useQuery({
     queryKey: ['playground-public-model-pricing'],
@@ -306,20 +311,21 @@ export function Playground({
 
   const playgroundModelsData = useMemo(
     () =>
-      (availableModelsData ?? [])
-        .filter(isSupportedPlaygroundModelName)
-        .map((model) => {
+      (availableCatalogData ?? [])
+        .filter((model) => isSupportedPlaygroundModelName(model.id))
+        .map((metadata) => {
+          const model = metadata.id
           const pricing = publicModelPricing.get(model)
           return {
             label: model,
             value: model,
-            promotions: getModelPromotions(model, pricing?.tags ?? ''),
+            promotions: getModelPromotions(model, metadata.tags ?? ''),
             price: getPublicModelPrice(pricing),
             releaseDate:
               pricing?.directory_metadata?.released_at ?? pricing?.release_date,
             featuredOrder: pricing?.featured_order,
-            tags: pricing?.tags ?? '',
-            displayWeight: pricing?.display_weight ?? 0,
+            tags: metadata.tags ?? '',
+            displayWeight: metadata.display_weight ?? 0,
           }
         })
         .sort(
@@ -327,9 +333,9 @@ export function Playground({
             Number(Boolean(b.tags?.trim())) - Number(Boolean(a.tags?.trim())) ||
             (b.displayWeight ?? 0) - (a.displayWeight ?? 0) ||
             modelPromotionPriority(a.value, a.tags) -
-            modelPromotionPriority(b.value, b.tags)
+              modelPromotionPriority(b.value, b.tags)
         ),
-    [availableModelsData, publicModelPricing]
+    [availableCatalogData, publicModelPricing]
   )
   const chatModelsData = useMemo(
     () =>

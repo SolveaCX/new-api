@@ -3,6 +3,7 @@ import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP, type PricingData, type Pr
 
 type PublicCatalogModel = {
   id: string;
+  tags?: string;
   availability_status: string;
   supported_endpoint_types: string[];
 };
@@ -29,7 +30,7 @@ export async function getAvailableModelPricingData(): Promise<PricingData> {
     // Preserve configured website ordering and its richer directory metadata.
     const models: PricingModel[] = pricing.models.flatMap((model) => {
       const available = catalog.get(model.model_name);
-      return available ? [{ ...model, availability_status: available.availability_status, supported_endpoint_types: available.supported_endpoint_types }] : [];
+      return available ? [{ ...model, tags: available.tags ?? '', availability_status: available.availability_status, supported_endpoint_types: available.supported_endpoint_types }] : [];
     });
     return { ...pricing, models };
   } catch {

@@ -20,6 +20,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useModelAccess } from '@/features/available-models/hooks/use-model-access'
 import { getCatalogTokenModels } from '@/features/available-models/lib/catalog-token-models'
+import { sortModelsByPromotion } from '@/features/available-models/lib/model-promotions'
 import { getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useApiInfo } from '../../hooks/use-status-data'
@@ -262,7 +263,12 @@ export function OverviewDashboard({
         loadingKeys={loadingKeys}
         resolveKey={resolveKey}
         onSelectKey={setSelectedKeyId}
-        models={availableModels}
+        models={sortModelsByPromotion(catalogModels)
+          .map((model) => model.id)
+          .filter((id) => availableModels.includes(id))}
+        modelTags={Object.fromEntries(
+          catalogModels.map((model) => [model.id, model.tags ?? ''])
+        )}
         selectedModel={exampleModel}
         onSelectModel={setSelectedModel}
         snippetContext={snippetContext}

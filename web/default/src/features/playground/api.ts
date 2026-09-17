@@ -365,9 +365,13 @@ export async function downloadPlaygroundRecords(): Promise<PlaygroundRecordExpor
 }
 
 /** Load the same visible, healthy catalog as the Available Models page. */
-export async function getUserModels(group?: string): Promise<string[]> {
+export async function getPlaygroundModelCatalog(group?: string) {
   const access = await getUserModelAccess('available_models')
-  return getModelAccessScopeModels(access, group).map((model) => model.id)
+  return getModelAccessScopeModels(access, group)
+}
+
+export async function getUserModels(group?: string): Promise<string[]> {
+  return (await getPlaygroundModelCatalog(group)).map((model) => model.id)
 }
 
 export type PlaygroundModelPricing = {
