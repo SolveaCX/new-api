@@ -5630,7 +5630,6 @@
     "View models supported by each access group and compatible endpoint.": "查看每个访问分组支持的模型和兼容端点。",
     "Endpoint not specified": "未标注兼容端点",
     "{{count}} models available": "可用模型 {{count}} 个",
-    "Callable Models": "可调用模型",
     "Callable model scope": "可调用模型范围",
     "{{count}} callable models": "{{count}} 个可调用模型",
     "0 callable": "0 个可调用",

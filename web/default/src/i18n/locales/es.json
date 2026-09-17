@@ -5630,7 +5630,6 @@
     "View models supported by each access group and compatible endpoint.": "Consulta los modelos admitidos por cada grupo de acceso y los endpoints compatibles.",
     "Endpoint not specified": "Endpoint no especificado",
     "{{count}} models available": "{{count}} modelos disponibles",
-    "Callable Models": "Modelos disponibles para llamadas",
     "Callable model scope": "Ámbito de modelos disponibles para llamadas",
     "{{count}} callable models": "{{count}} modelos disponibles para llamadas",
     "0 callable": "0 modelos disponibles para llamadas",

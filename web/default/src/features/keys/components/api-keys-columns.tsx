@@ -34,11 +34,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { API_KEY_STATUSES } from '../constants'
 import { shouldShowApiKeyGroupColumn } from '../lib/api-key-model-scope'
 import { type ApiKey } from '../types'
-import {
-  ApiKeyCell,
-  ModelLimitsCell,
-  IpRestrictionsCell,
-} from './api-keys-cells'
+import { ApiKeyCell, IpRestrictionsCell } from './api-keys-cells'
 import { useApiKeys } from './api-keys-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 
@@ -229,16 +225,6 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
           } as ColumnDef<ApiKey>,
         ]
       : []),
-    {
-      id: 'model_limits',
-      accessorKey: 'model_limits',
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('Callable Models')} />
-      ),
-      cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
-      enableSorting: false,
-      meta: { label: t('Callable Models'), mobileHidden: true },
-    },
     {
       id: 'allow_ips',
       accessorKey: 'allow_ips',

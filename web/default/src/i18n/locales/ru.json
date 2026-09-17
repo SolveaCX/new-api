@@ -5630,7 +5630,6 @@
     "View models supported by each access group and compatible endpoint.": "Просмотрите модели, поддерживаемые каждой группой доступа, и совместимые конечные точки.",
     "Endpoint not specified": "Конечная точка не указана",
     "{{count}} models available": "Доступно моделей: {{count}}",
-    "Callable Models": "Модели, доступные для вызова",
     "Callable model scope": "Область моделей, доступных для вызова",
     "{{count}} callable models": "Доступно для вызова моделей: {{count}}",
     "0 callable": "Нет моделей для вызова",
