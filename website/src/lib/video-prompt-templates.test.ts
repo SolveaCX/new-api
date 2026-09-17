@@ -50,7 +50,7 @@ describe("video profession prompt templates", () => {
     const visibleContentSignatures: Record<string, RegExp[]> = {
       "seedance-2.5": [
         /student.*parchment map.*library/i,
-        /kettle.*assembles.*steam/i,
+        /kettle.*assemble.*steam/i,
         /armored.*rover.*treaded wheel.*dust/i,
         /cloaked traveler.*canyon.*sunset/i,
         /hand.*lavender planet.*moons/i,
@@ -98,7 +98,7 @@ describe("video profession prompt templates", () => {
       ],
       "grok-imagine-video": [
         /mustard jacket.*stairwell.*envelope/i,
-        /white travel mug.*blue lid.*steam/i,
+        /white travel mug.*blue hinged lid.*steam/i,
         /industrial.*room.*ocean.*window/i,
         /man.*quadcopter.*circles/i,
         /presenter.*microphone.*audio cable/i,
@@ -106,7 +106,7 @@ describe("video profession prompt templates", () => {
       ],
       "grok-imagine-video-1.5": [
         /woman.*library.*origami bird.*window/i,
-        /woman.*lamp.*glowing panel.*notebook/i,
+        /woman.*lamp.*notebook.*light panel/i,
         /traveler.*bridge.*green map.*balloon/i,
         /ninja.*rooftop.*paper umbrella/i,
         /cards.*sprout.*tree/i,
@@ -114,7 +114,7 @@ describe("video profession prompt templates", () => {
       ],
       "veo-3.1-generate-preview": [
         /traveler.*platform.*package.*antique key/i,
-        /amber serum.*water.*wraps/i,
+        /amber serum.*drop.*water/i,
         /oval module.*unfolds.*quadcopter/i,
         /blue droplet.*water creature.*ripple/i,
         /conservator.*library.*astronomical instrument/i,
@@ -152,28 +152,20 @@ describe("video profession prompt templates", () => {
       });
     }
 
-    // MiniMax-H3 uses the six clips reviewed with Seedance 2.0. The stable
-    // profession IDs keep those clips attached to the right card.
+    // The stable profession IDs keep every generated clip attached to its card.
     const minimaxCards = getVideoPromptTemplates("minimax-h3", "en");
     expect(minimaxCards).toHaveLength(VIDEO_PROFESSION_IDS.length);
     expect(minimaxCards.map((card) => card.professionId)).toEqual([...VIDEO_PROFESSION_IDS]);
-    expect(minimaxCards[0].video).toBe(
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/minimax-h3-seedance-2-0.mp4",
-    );
+    expect(minimaxCards[0].video).toMatch(/\/video-profession-01\/20260917-minimax-h3-[a-f0-9]{12}\.mp4$/);
   });
 
   test("keeps the legacy model registry separate from profession media", () => {
     expect(VIDEO_MODEL_IDS).toHaveLength(10);
     expect(VIDEO_PROFESSION_MODEL_IDS).toHaveLength(10);
-    expect(getVideoPromptTemplateFallbackPosters("seedance-2.5")).toEqual([]);
-    expect(getVideoPromptTemplateFallbackPosters("minimax-h3")).toEqual([
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/minimax-h3-seedance-2-0.jpg",
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-02/minimax-h3-seedance-advertising-ecommerce.jpg",
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-03/minimax-h3-seedance-film-concept-production.jpg",
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-04/minimax-h3-seedance-game-art-animation.jpg",
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-05/minimax-h3-seedance-creator-explainer.jpg",
-      "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/minimax-h3-seedance-music-visual-art.jpg",
-    ]);
+    for (const modelId of VIDEO_PROFESSION_MODEL_IDS) {
+      expect(getVideoPromptTemplateFallbackPosters(modelId)).toHaveLength(6);
+      expect(getVideoPromptTemplateLocalFallbackPosters(modelId)).toEqual(getVideoPromptTemplateFallbackPosters(modelId));
+    }
   });
 
   test("keeps each CDN clip paired with its same-profession local poster", () => {
@@ -189,11 +181,11 @@ describe("video profession prompt templates", () => {
     const seedanceTemplates = getVideoPromptTemplates("seedance-2.5");
     const minimaxTemplates = getVideoPromptTemplates("MiniMax-H3");
     expect(seedanceTemplates).toHaveLength(6);
-    expect(seedanceTemplates[0].poster).toBe("");
+    expect(seedanceTemplates[0].poster).toContain("/assets/model-regeneration/20260917/");
     expect(seedanceTemplates.every((template) => template.video.endsWith(".mp4"))).toBe(true);
     expect(minimaxTemplates).toHaveLength(6);
-    expect(minimaxTemplates[0].poster).toContain("minimax-h3-seedance-2-0.jpg");
-    expect(minimaxTemplates.every((template) => template.video.includes("minimax-h3-seedance"))).toBe(true);
+    expect(minimaxTemplates[0].poster).toMatch(/20260917-minimax-h3-[a-f0-9]{12}\.jpg$/);
+    expect(minimaxTemplates.every((template) => template.video.includes("20260917-minimax-h3-"))).toBe(true);
     expect(getVideoPromptTemplates("unknown-video-model")).toEqual([]);
   });
 
@@ -213,6 +205,22 @@ describe("video profession prompt templates", () => {
         expect(starter).toBe(englishStarter);
       }
     }
+  });
+
+  test("keeps every model brief executable at the selected duration", () => {
+    for (const modelId of VIDEO_PROFESSION_MODEL_IDS) {
+      for (const card of getVideoPromptTemplates(modelId, "en")) {
+        expect(card.prompt).toContain("Shot sequence: 1.");
+        expect(card.prompt).toContain("; 2.");
+        expect(card.prompt).toContain("; 3.");
+        expect(card.prompt).not.toMatch(/Scale all beat boundaries|\d\d:\d\d[–-]\d\d:\d\d/);
+        expect(card.prompt.length).toBeLessThan(1000);
+      }
+    }
+
+    const bottleAd = getVideoPromptTemplates("seedance-2.0", "en")[1].prompt;
+    expect(bottleAd).toMatch(/unscrews the cap.*pours cold water.*ice/i);
+    expect(bottleAd).toMatch(/final hero frame/i);
   });
 
   test("keeps a generic configured video starter in English", () => {
