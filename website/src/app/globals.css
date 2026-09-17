@@ -7938,19 +7938,18 @@ html:has(.model-prototype) {
   }
 }
 
-/* Related cards keep the original Flatkey cover composition. The keyhole has
- * been removed from the base artwork; the exact Flatkey lockup and each live
- * model logo are positioned as responsive foreground elements. */
+/* Dual-brand covers: quiet Flatkey signature, centered model identity, and
+ * normal-flow copy so localized names never overlap the artwork. */
 .model-prototype .related-card {
   position: relative;
   isolation: isolate;
-  border: 0;
-  background:
-    radial-gradient(circle at 66% 54%, rgb(225 216 255 / 0.34) 0%, rgb(225 216 255 / 0.12) 22%, transparent 38%),
-    linear-gradient(180deg, transparent 67%, rgb(255 255 255 / 0.18) 78%, rgb(250 247 255 / 0.84) 100%),
-    url("/assets/models-featured/flatkey-model-cover-no-key.png") center / cover;
-  box-shadow: 0 18px 42px -32px rgb(58 35 111 / 0.42);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  aspect-ratio: auto;
+  padding: 0;
+  border: 1px solid #e9e4f0;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 4px 16px -12px rgb(51 33 81 / 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .model-prototype .related-card::before,
@@ -7959,80 +7958,109 @@ html:has(.model-prototype) {
 }
 
 .model-prototype .related-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 24px 50px -30px rgb(76 29 149 / 0.5);
+  transform: translateY(-3px);
+  border-color: #c8b5ec;
+  box-shadow: 0 14px 32px -20px rgb(76 29 149 / 0.3);
+}
+
+.model-prototype .related-card:focus-visible {
+  outline: 3px solid #8b5cf6;
+  outline-offset: 4px;
 }
 
 .model-prototype .related-card-top {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 0;
-  display: block;
+  position: relative !important;
+  inset: auto !important;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  justify-content: center;
+  width: 100%;
   height: auto;
-  min-height: 0;
+  min-height: 196px;
+  aspect-ratio: 4 / 3;
   margin: 0;
+  padding: 56px 20px 24px;
   overflow: hidden;
-  border-radius: inherit;
-  background: transparent;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 50% 85%, #e7dcfb 0%, transparent 64%),
+    linear-gradient(135deg, #faf8ff, #f1edfa);
   box-shadow: none;
+}
+
+.model-prototype .related-card-top::before,
+.model-prototype .related-card-top::after {
+  content: "";
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgb(139 92 246 / 0.09);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.model-prototype .related-card-top::after {
+  width: 300px;
+  height: 300px;
 }
 
 .model-prototype .related-card-brand {
   position: absolute !important;
-  top: clamp(24px, 7%, 36px);
-  left: clamp(20px, 7%, 36px);
+  top: 18px;
+  left: 18px;
   z-index: 2;
-  width: clamp(96px, 28%, 150px) !important;
+  width: 90px !important;
   height: auto;
-  filter: drop-shadow(0 4px 10px rgb(76 29 149 / 0.1));
 }
 
 .model-prototype .related-card-top .related-card-logo-mark {
-  position: absolute !important;
-  top: 54%;
-  left: 66%;
+  position: relative;
   z-index: 1;
   display: grid;
-  align-items: center;
-  justify-items: center;
-    width: clamp(120px, 40%, 190px) !important;
-    height: clamp(120px, 40%, 190px) !important;
-    border: 0 !important;
-    border-radius: 50% !important;
-    background: radial-gradient(circle, rgb(255 255 255 / 0.72) 0%, rgb(255 255 255 / 0.42) 42%, rgb(255 255 255 / 0) 74%) !important;
-    box-shadow: none !important;
-    backdrop-filter: none;
-  overflow: visible !important;
-  transform: translate(-50%, -50%);
-  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease;
+  place-items: center;
+  transition: transform 0.2s ease;
 }
 
-.model-prototype .related-card-top .related-card-logo-mark img {
-    position: relative;
-    z-index: 1;
-    width: calc(100% - 24px) !important;
-    height: calc(100% - 24px) !important;
-    filter: drop-shadow(0 10px 16px rgb(34 23 101 / 0.22));
+.model-prototype .related-card-logo-mark .related-card-logo-bare {
+  width: 88px !important;
+  height: 88px !important;
+  border-radius: 24px !important;
+  box-shadow: 0 10px 24px -14px rgb(57 29 102 / 0.35), 0 2px 4px rgb(57 29 102 / 0.04);
+}
+
+.model-prototype .related-card-logo-mark .related-card-logo-bare img {
+  width: 56px !important;
+  height: 56px !important;
+  object-fit: contain;
+}
+
+.model-prototype .related-card-logo-bare > span {
+  font-size: 28px;
 }
 
 .model-prototype .related-card:hover .related-card-logo-mark {
-  transform: translate(-50%, calc(-50% - 4px)) scale(1.04);
+  transform: translateY(-2px);
 }
 
 .model-prototype .related-card .related-copy {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  position: relative;
+  inset: auto;
   z-index: 1;
-  min-height: 110px;
-  padding: 28px clamp(20px, 7%, 36px) clamp(22px, 7%, 34px);
+  width: 100%;
+  min-height: 100px;
+  margin-top: 0;
+  padding: 20px;
+  border-top: 1px solid #eee8f5;
   color: #171525;
-  background: linear-gradient(180deg, transparent 0%, rgb(255 255 255 / 0.28) 18%, rgb(250 248 255 / 0.86) 68%, rgb(250 248 255 / 0.98) 100%);
+  background: #fff;
 }
 
 .model-prototype .related-card .related-copy strong {
   color: #171525;
+  font-size: 17px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   text-shadow: none;
 }
 
@@ -8040,48 +8068,32 @@ html:has(.model-prototype) {
   color: #716a82;
 }
 
-/* Related cards remain square while the grid changes columns at the same
- * density points as the rest of the page. The old 305px minimum row forced
- * four cards to overflow their columns at intermediate desktop widths. */
 @media (max-width: 1100px) {
   .model-prototype .related-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* On phones the cards use the full content width, with enough breathing room
- * for translated names and descriptions to wrap without colliding. */
 @media (max-width: 620px) {
   .model-prototype .related-grid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
 
-  .model-prototype .related-card {
-    aspect-ratio: 1 / 1;
+  .model-prototype .related-card-top {
+    aspect-ratio: 16 / 10;
   }
+}
 
-  .model-prototype .related-card-brand {
-    top: 24px;
-    left: 20px;
-    width: 104px !important;
-  }
-
+@media (prefers-reduced-motion: reduce) {
+  .model-prototype .related-card,
   .model-prototype .related-card-top .related-card-logo-mark {
-    top: 52%;
-    left: 68%;
-    width: 120px !important;
-    height: 120px !important;
+    transition: none;
   }
 
-  .model-prototype .related-card-top .related-card-logo-mark img {
-    width: 98px !important;
-    height: 98px !important;
-  }
-
-  .model-prototype .related-card .related-copy {
-    min-height: 108px;
-    padding: 28px 18px 18px;
+  .model-prototype .related-card:hover,
+  .model-prototype .related-card:hover .related-card-logo-mark {
+    transform: none;
   }
 }
 
