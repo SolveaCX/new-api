@@ -50,7 +50,7 @@ describe("video profession prompt templates", () => {
     const visibleContentSignatures: Record<string, RegExp[]> = {
       "seedance-2.5": [
         /student.*parchment map.*library/i,
-        /kettle.*assembles.*steam/i,
+        /kettle.*assemble.*steam/i,
         /armored.*rover.*treaded wheel.*dust/i,
         /cloaked traveler.*canyon.*sunset/i,
         /hand.*lavender planet.*moons/i,
@@ -98,7 +98,7 @@ describe("video profession prompt templates", () => {
       ],
       "grok-imagine-video": [
         /mustard jacket.*stairwell.*envelope/i,
-        /white travel mug.*blue lid.*steam/i,
+        /white travel mug.*blue hinged lid.*steam/i,
         /industrial.*room.*ocean.*window/i,
         /man.*quadcopter.*circles/i,
         /presenter.*microphone.*audio cable/i,
@@ -106,7 +106,7 @@ describe("video profession prompt templates", () => {
       ],
       "grok-imagine-video-1.5": [
         /woman.*library.*origami bird.*window/i,
-        /woman.*lamp.*glowing panel.*notebook/i,
+        /woman.*lamp.*notebook.*light panel/i,
         /traveler.*bridge.*green map.*balloon/i,
         /ninja.*rooftop.*paper umbrella/i,
         /cards.*sprout.*tree/i,
@@ -114,7 +114,7 @@ describe("video profession prompt templates", () => {
       ],
       "veo-3.1-generate-preview": [
         /traveler.*platform.*package.*antique key/i,
-        /amber serum.*water.*wraps/i,
+        /amber serum.*drop.*water/i,
         /oval module.*unfolds.*quadcopter/i,
         /blue droplet.*water creature.*ripple/i,
         /conservator.*library.*astronomical instrument/i,
@@ -213,6 +213,22 @@ describe("video profession prompt templates", () => {
         expect(starter).toBe(englishStarter);
       }
     }
+  });
+
+  test("keeps every model brief executable at the selected duration", () => {
+    for (const modelId of VIDEO_PROFESSION_MODEL_IDS) {
+      for (const card of getVideoPromptTemplates(modelId, "en")) {
+        expect(card.prompt).toContain("Shot sequence: 1.");
+        expect(card.prompt).toContain("; 2.");
+        expect(card.prompt).toContain("; 3.");
+        expect(card.prompt).not.toMatch(/Scale all beat boundaries|\d\d:\d\d[–-]\d\d:\d\d/);
+        expect(card.prompt.length).toBeLessThan(1000);
+      }
+    }
+
+    const bottleAd = getVideoPromptTemplates("seedance-2.0", "en")[1].prompt;
+    expect(bottleAd).toMatch(/unscrews the cap.*pours cold water.*ice/i);
+    expect(bottleAd).toMatch(/final hero frame/i);
   });
 
   test("keeps a generic configured video starter in English", () => {
