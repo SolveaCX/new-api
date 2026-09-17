@@ -7606,6 +7606,49 @@ html:has(.model-prototype) {
   justify-content: center;
   text-align: center;
   line-height: 18px;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.model-prototype .prompt-actions .outline-button {
+  cursor: pointer;
+}
+
+.model-prototype .prompt-actions .outline-button:hover {
+  border-color: #7767dd;
+  color: #4935ad;
+  background: #f5f2ff;
+  box-shadow: 0 4px 12px rgb(83 63 173 / 12%);
+}
+
+.model-prototype .prompt-actions .outline-button:hover::before {
+  color: currentColor;
+}
+
+.model-prototype .prompt-actions .outline-button[data-copy-status="copied"] {
+  border-color: #86c9a0;
+  color: #166534;
+  background: #effaf2;
+}
+
+.model-prototype .prompt-actions .outline-button[data-copy-status="failed"] {
+  border-color: #e9a7a7;
+  color: #a12b2b;
+  background: #fff3f3;
+}
+
+.model-prototype .prompt-actions .dark-button:hover {
+  background: #343041;
+  box-shadow: 0 4px 12px rgb(26 22 39 / 18%);
+}
+
+.model-prototype .prompt-actions > :is(button, a):active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.model-prototype .prompt-actions > :is(button, a):focus-visible {
+  outline: 2px solid #7767dd;
+  outline-offset: 2px;
 }
 
 /* Related cards intentionally clip their image layer to the rounded frame;
