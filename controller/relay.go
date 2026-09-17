@@ -128,6 +128,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
+	// Legacy PLG accounts without a verified phone get, once per 24h, a
+	// synthesized "bind your phone" reply instead of the model. The flag is set
+	// by TokenAuth; nothing has been counted or charged yet at this point. The
+	// distributor's deferred release frees any channel-concurrency lease when
+	// this handler returns.
+	if maybeServePhoneVerificationReminder(c, relayFormat, relayInfo, request) {
+		return
+	}
+
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.

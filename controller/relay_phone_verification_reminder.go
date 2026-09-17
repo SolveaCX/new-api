@@ -9,9 +9,13 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -346,4 +350,53 @@ func writePhoneReminderGemini(c *gin.Context, stream bool, text string) error {
 	}
 	helper.SetEventStreamHeaders(c)
 	return helper.ObjectData(c, body)
+}
+
+// claimPhoneVerificationReminder is indirected so tests can stub the 24h slot.
+var claimPhoneVerificationReminder = service.ClaimPhoneVerificationReminder
+
+// phoneVerificationReminderLink points the user at the console page that
+// hosts the account bindings tab (and, for PLG accounts, the binding dialog).
+func phoneVerificationReminderLink() string {
+	origin := system_setting.ResolveConsoleOrigin()
+	if origin == "" {
+		origin = system_setting.ServerAddress
+	}
+	return strings.TrimRight(origin, "/") + common.ThemeAwarePath("/console/personal")
+}
+
+func phoneVerificationReminderText(c *gin.Context) string {
+	return i18n.Translate(i18n.GetLangFromContext(c), i18n.MsgNotifyPhoneVerificationReminderForAPI, map[string]any{
+		"SystemName": common.SystemName,
+		"Link":       phoneVerificationReminderLink(),
+	})
+}
+
+// maybeServePhoneVerificationReminder answers the request with the synthesized
+// reminder when TokenAuth flagged the account, the request shape is supported
+// and this call wins the user's 24h slot. It reports whether it wrote the
+// response. Every other outcome, including any error, returns false without
+// touching the response so the request is relayed as usual.
+func maybeServePhoneVerificationReminder(c *gin.Context, relayFormat types.RelayFormat, info *relaycommon.RelayInfo, request dto.Request) bool {
+	if c == nil || info == nil || !common.GetContextKeyBool(c, constant.ContextKeyPhoneVerificationReminderEligible) {
+		return false
+	}
+	kind, ok := phoneVerificationReminderKindFor(relayFormat, info, c.Request.URL.Path, request)
+	if !ok {
+		return false
+	}
+	claimed, err := claimPhoneVerificationReminder(info.UserId)
+	if err != nil {
+		logger.LogWarn(c, fmt.Sprintf("phone verification reminder skipped for user %d: %s", info.UserId, err.Error()))
+		return false
+	}
+	if !claimed {
+		return false
+	}
+	if err := writePhoneVerificationReminder(c, kind, info.IsStream, info.OriginModelName, phoneVerificationReminderText(c)); err != nil {
+		logger.LogError(c, fmt.Sprintf("phone verification reminder write failed for user %d: %s", info.UserId, err.Error()))
+		return c.Writer.Written()
+	}
+	logger.LogInfo(c, fmt.Sprintf("phone verification reminder served: user_id=%d model=%s format=%s stream=%t", info.UserId, info.OriginModelName, relayFormat, info.IsStream))
+	return true
 }

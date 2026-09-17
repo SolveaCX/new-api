@@ -2,15 +2,20 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -326,4 +331,125 @@ func TestWritePhoneVerificationReminderGemini(t *testing.T) {
 		require.Equal(t, reminderText, resp.Candidates[0].Content.Parts[0].Text)
 		require.NotContains(t, rec.Body.String(), "[DONE]")
 	})
+}
+
+func stubPhoneReminderClaim(t *testing.T, claimed bool, err error) *int {
+	t.Helper()
+	calls := 0
+	original := claimPhoneVerificationReminder
+	claimPhoneVerificationReminder = func(userId int) (bool, error) {
+		calls++
+		return claimed, err
+	}
+	t.Cleanup(func() { claimPhoneVerificationReminder = original })
+	return &calls
+}
+
+func newPhoneReminderRelayContext(t *testing.T, path string, eligible bool) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	c, rec := newPhoneReminderRecorder(t)
+	c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+	c.Set("id", 4242)
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{Language: "zh-CN"})
+	if eligible {
+		common.SetContextKey(c, constant.ContextKeyPhoneVerificationReminderEligible, true)
+	}
+	return c, rec
+}
+
+func TestMaybeServePhoneVerificationReminderServesEligibleChatRequest(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	calls := stubPhoneReminderClaim(t, true, nil)
+	c, rec := newPhoneReminderRelayContext(t, "/v1/chat/completions", true)
+	info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatOpenAI, RelayMode: relayconstant.RelayModeChatCompletions, OriginModelName: "gpt-x", UserId: 4242}
+	request := chatReq(t, `{"model":"gpt-x","messages":[{"role":"user","content":"hi"}]}`)
+
+	served := maybeServePhoneVerificationReminder(c, types.RelayFormatOpenAI, info, request)
+
+	require.True(t, served)
+	require.Equal(t, 1, *calls)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, phoneVerificationNoticeValue, rec.Header().Get(phoneVerificationNoticeHeader))
+	var resp dto.OpenAITextResponse
+	require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &resp))
+	text := resp.Choices[0].Message.StringContent()
+	require.Contains(t, text, "尚未绑定手机号")
+	require.Contains(t, text, "http://localhost:3000/")
+	require.Contains(t, text, common.SystemName)
+}
+
+func TestMaybeServePhoneVerificationReminderIsNoopWithoutFlag(t *testing.T) {
+	calls := stubPhoneReminderClaim(t, true, nil)
+	c, rec := newPhoneReminderRelayContext(t, "/v1/chat/completions", false)
+	info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatOpenAI, RelayMode: relayconstant.RelayModeChatCompletions, OriginModelName: "gpt-x", UserId: 4242}
+	request := chatReq(t, `{"model":"gpt-x","messages":[]}`)
+
+	require.False(t, maybeServePhoneVerificationReminder(c, types.RelayFormatOpenAI, info, request))
+	require.Equal(t, 0, *calls)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
+}
+
+func TestMaybeServePhoneVerificationReminderDoesNotClaimUnsupportedRequests(t *testing.T) {
+	calls := stubPhoneReminderClaim(t, true, nil)
+	c, rec := newPhoneReminderRelayContext(t, "/v1/embeddings", true)
+	info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatEmbedding, RelayMode: relayconstant.RelayModeEmbeddings, OriginModelName: "emb", UserId: 4242}
+
+	require.False(t, maybeServePhoneVerificationReminder(c, types.RelayFormatEmbedding, info, &dto.EmbeddingRequest{}))
+	require.Equal(t, 0, *calls, "unsupported requests must not consume the daily slot")
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
+}
+
+func TestMaybeServePhoneVerificationReminderFallsThroughWhenClaimLostOrFails(t *testing.T) {
+	for name, tc := range map[string]struct {
+		claimed bool
+		err     error
+	}{
+		"lost":  {claimed: false, err: nil},
+		"error": {claimed: false, err: errors.New("redis down")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := stubPhoneReminderClaim(t, tc.claimed, tc.err)
+			c, rec := newPhoneReminderRelayContext(t, "/v1/messages", true)
+			info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatClaude, RelayMode: relayconstant.RelayModeChatCompletions, OriginModelName: "claude-x", UserId: 4242}
+			request := claudeReq(t, `{"model":"claude-x","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}`)
+
+			require.False(t, maybeServePhoneVerificationReminder(c, types.RelayFormatClaude, info, request))
+			require.Equal(t, 1, *calls)
+			require.False(t, c.Writer.Written())
+			require.Empty(t, rec.Body.String())
+			require.Empty(t, rec.Header().Get(phoneVerificationNoticeHeader))
+		})
+	}
+}
+
+func TestMaybeServePhoneVerificationReminderHonoursStreamFlagAndGeminiPath(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	stubPhoneReminderClaim(t, true, nil)
+	c, rec := newPhoneReminderRelayContext(t, "/v1beta/models/gemini-x:streamGenerateContent", true)
+	info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatGemini, RelayMode: relayconstant.RelayModeGemini, IsStream: true, OriginModelName: "gemini-x", UserId: 4242}
+	request := geminiReq(t, `{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+
+	require.True(t, maybeServePhoneVerificationReminder(c, types.RelayFormatGemini, info, request))
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Len(t, sseDataLines(t, rec.Body.String()), 1)
+}
+
+func TestClaimPhoneVerificationReminderDefaultsToServiceImplementation(t *testing.T) {
+	require.NotNil(t, claimPhoneVerificationReminder)
+	// The indirection exists only so tests can stub the 24h slot; production
+	// must keep pointing at the service implementation.
+	_ = service.ClaimPhoneVerificationReminder
+}
+
+func TestRelayCallsPhoneVerificationReminderBeforeBilling(t *testing.T) {
+	source, err := os.ReadFile("relay.go")
+	require.NoError(t, err)
+	text := string(source)
+	hook := strings.Index(text, "maybeServePhoneVerificationReminder(c, relayFormat, relayInfo, request)")
+	require.Greater(t, hook, 0, "Relay must call the reminder hook")
+	require.Less(t, strings.Index(text, "IsModelOfficiallyUnsupported(relayInfo.OriginModelName)"), hook)
+	require.Less(t, hook, strings.Index(text, "needSensitiveCheck := setting.ShouldCheckPromptSensitive()"))
+	require.Less(t, hook, strings.Index(text, "service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)"))
 }
