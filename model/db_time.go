@@ -70,6 +70,17 @@ func getDBTimestampMillis(db *gorm.DB) (int64, error) {
 	return scanDBTimestamp(db, query)
 }
 
+// GetDBTimestampTx returns database time using the given handle, so callers
+// already inside a transaction do not open a second connection (which would
+// deadlock on a single-connection SQLite test database and defeat the
+// transaction's lock scope elsewhere). Falls back to application time on error.
+func GetDBTimestampTx(tx *gorm.DB) int64 {
+	if tx == nil {
+		return GetDBTimestamp()
+	}
+	return getDBTimestampTx(tx)
+}
+
 func getDBTimestampTxStrict(tx *gorm.DB) (int64, error) {
 	if tx == nil {
 		return 0, errors.New("database handle is nil")

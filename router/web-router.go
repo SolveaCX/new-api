@@ -87,7 +87,7 @@ func isBackendOrAssetPath(path string) bool {
 
 func publicWWWRedirectPolicy() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if strings.EqualFold(publicRequestHost(c), "www.flatkey.ai") {
+		if host := publicRequestHost(c); strings.EqualFold(host, "www.flatkey.ai") || strings.EqualFold(host, "one.flatkey.ai") {
 			target := "https://flatkey.ai" + c.Request.URL.RequestURI()
 			c.Redirect(http.StatusMovedPermanently, target)
 			c.Abort()

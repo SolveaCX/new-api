@@ -83,16 +83,31 @@ func prepareOAuthState(c *gin.Context, session sessions.Session) string {
 func applyCustomerReferralInviteToSession(c *gin.Context, session sessions.Session) {
 	session.Delete("customer_referral_invite_code")
 	session.Delete("customer_referral_source_platform")
+	session.Delete("is_fluere")
+
+	isFluere := c.Query("is_fluere") == "true" || c.Query("isFluere") == "true" || strings.EqualFold(c.Query("source_platform"), "fluere")
+	if cookieFluere, err := c.Cookie("is_fluere"); err == nil && cookieFluere == "true" {
+		isFluere = true
+	}
+	if cookieRegSource, err := c.Cookie("registration_source"); err == nil && strings.EqualFold(cookieRegSource, "fluere") {
+		isFluere = true
+	}
+
 	rawInvite := strings.TrimSpace(c.Query("invite"))
-	if rawInvite == "" {
-		return
+	if rawInvite != "" {
+		invite, err := service.DecodeCustomerInvite(rawInvite)
+		if err == nil {
+			session.Set("customer_referral_invite_code", invite.Code)
+			session.Set("customer_referral_source_platform", invite.Platform)
+			if strings.EqualFold(invite.Platform, "fluere") {
+				isFluere = true
+			}
+		}
 	}
-	invite, err := service.DecodeCustomerInvite(rawInvite)
-	if err != nil {
-		return
+
+	if isFluere {
+		session.Set("is_fluere", true)
 	}
-	session.Set("customer_referral_invite_code", invite.Code)
-	session.Set("customer_referral_source_platform", invite.Platform)
 }
 
 func customerReferralInviteFromSession(session sessions.Session) (string, string) {
@@ -791,8 +806,24 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		user.Status = common.UserStatusDisabled
 	}
 	user.AdsAttribution = adsAttribution
+	isFluereSession, _ := session.Get("is_fluere").(bool)
+	isFluereQuery := c.Query("is_fluere") == "true" || c.Query("isFluere") == "true" || strings.EqualFold(c.Query("source_platform"), "fluere")
+	cookieFluere, _ := c.Cookie("is_fluere")
+	cookieRegSource, _ := c.Cookie("registration_source")
+	isFluereCookie := cookieFluere == "true" || strings.EqualFold(cookieRegSource, "fluere")
+	isFluere := isFluereSession || isFluereQuery || isFluereCookie || strings.EqualFold(customerInvitePlatform, "fluere")
+
 	user.CustomerReferralInviteCode = customerInviteCode
 	user.CustomerReferralSourcePlatform = customerInvitePlatform
+	user.IsFluere = isFluere
+	if isFluere {
+		user.Group = "Enterprise"
+		if user.CustomerReferralSourcePlatform == "" {
+			user.CustomerReferralSourcePlatform = "fluere"
+		}
+	} else {
+		user.Group = plgGroup
+	}
 	if cookieLang, err := c.Cookie(i18n.LanguagePreferenceCookieName); err == nil {
 		if language, ok := dto.NormalizeUserLanguagePreference(cookieLang); ok {
 			user.SetSetting(dto.UserSetting{Language: language})

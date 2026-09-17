@@ -142,6 +142,10 @@ jobs:
       # The production rollout is complete; keep the console capability on for
       # every subsequent revision. Router is not the owner of this UI feature.
       TOKEN_BATCH_GROUP_ENABLED: "true"
+      FLATKEY_DEPLOYMENT_ENV: production
+      SUBSCRIPTION_CATALOG_MIGRATION_ENABLED: "false"
+      SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED: "false"
+      SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST: ""
       TEMP_MEDIA_BUCKET: vocai-gemini-prod-flatkey-temp-media
       BYTEPLUS_REAL_PERSON_CALLBACK_BASE_URL: https://router.flatkey.ai
       BYTEPLUS_REAL_PERSON_CIPHER_SECRET: newapi-byteplus-real-person-cipher-key
@@ -210,6 +214,7 @@ jobs:
             VOC_DATA_MCP_TIMEOUT_SECONDS VOC_DATA_MCP_CATALOG_TTL_SECONDS \
             FLATKEY_DATA_TOOL_MARKUP_BPS FLATKEY_DATA_TOOL_VARIABLE_BASE_MICRO_USD FLATKEY_DATA_TOOL_MIN_PLAN_RANK \
             CODEX_FINGERPRINT_DEPLOYMENT_NAMESPACE \
+            FLATKEY_DEPLOYMENT_ENV SUBSCRIPTION_CATALOG_MIGRATION_ENABLED SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST \
             ASSET_MODEL_COVERAGE_STRICT_ENABLED ASSET_STORAGE_BUCKET \
             VIDEO_RESULT_STORAGE_BUCKET VIDEO_RESULT_RETENTION_SECONDS VIDEO_RESULT_SIGNED_URL_TTL_SECONDS \
             VIDEO_RESULT_FETCH_TIMEOUT_SECONDS VIDEO_RESULT_MAX_BYTES NODE_TYPE APP_ROLE TOKEN_BATCH_GROUP_ENABLED \
@@ -219,6 +224,12 @@ jobs:
               env_vars+=("${name}=${value}")
             fi
           done
+          if [[ -z "${SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST:-}" ]]; then
+            # An empty allowlist is a deliberate value: --update-env-vars is
+            # merge-only, so it must be written explicitly to clear any allowlist
+            # set by hand on the running service.
+            env_vars+=("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST=")
+          fi
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,
@@ -326,6 +337,10 @@ jobs:
       RUN_SERVICE: newapi-router
       NODE_TYPE: slave
       APP_ROLE: router
+      FLATKEY_DEPLOYMENT_ENV: production
+      SUBSCRIPTION_CATALOG_MIGRATION_ENABLED: "false"
+      SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED: "false"
+      SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST: ""
       # Keep in sync with deploy/gcp/envs/prod/terraform.tfvars.
       MAX_INSTANCES: 30
       TEMP_MEDIA_BUCKET: vocai-gemini-prod-flatkey-temp-media
@@ -395,6 +410,7 @@ jobs:
             VOC_DATA_MCP_TIMEOUT_SECONDS VOC_DATA_MCP_CATALOG_TTL_SECONDS \
             FLATKEY_DATA_TOOL_MARKUP_BPS FLATKEY_DATA_TOOL_VARIABLE_BASE_MICRO_USD FLATKEY_DATA_TOOL_MIN_PLAN_RANK \
             CODEX_FINGERPRINT_DEPLOYMENT_NAMESPACE \
+            FLATKEY_DEPLOYMENT_ENV SUBSCRIPTION_CATALOG_MIGRATION_ENABLED SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST \
             ASSET_MODEL_COVERAGE_STRICT_ENABLED ASSET_STORAGE_BUCKET \
             VIDEO_RESULT_STORAGE_BUCKET VIDEO_RESULT_RETENTION_SECONDS VIDEO_RESULT_SIGNED_URL_TTL_SECONDS \
             VIDEO_RESULT_FETCH_TIMEOUT_SECONDS VIDEO_RESULT_MAX_BYTES NODE_TYPE APP_ROLE TEMP_MEDIA_BUCKET \
@@ -404,6 +420,12 @@ jobs:
               env_vars+=("${name}=${value}")
             fi
           done
+          if [[ -z "${SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST:-}" ]]; then
+            # An empty allowlist is a deliberate value: --update-env-vars is
+            # merge-only, so it must be written explicitly to clear any allowlist
+            # set by hand on the running service.
+            env_vars+=("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST=")
+          fi
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,

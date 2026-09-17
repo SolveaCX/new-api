@@ -935,11 +935,13 @@ func TestReconcilePaidInvoiceCatalogMigrationAppliesTargetSnapshotAndNextCycleUs
 	require.Equal(t, legacyOrderBefore, legacyOrderAfter)
 }
 
-func TestReconcilePaidInvoiceCatalogMigrationRejectsWrongAmountWithoutSwitch(t *testing.T) {
+func TestReconcilePaidInvoiceCatalogMigrationAcceptsStripeAdjustedAmountAndSwitches(t *testing.T) {
+	// Tax, credit balance and coupons change what Stripe collects. The cutover
+	// contract is the target price id and currency, never the amount.
 	setupSubscriptionInvoiceServiceTestDB(t)
-	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 8994, 8995, 8996, "sub_catalog_wrong_amount")
+	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 8994, 8995, 8996, "sub_catalog_adjusted_amount")
 	enableStripeCatalogInvoiceSandbox(t, contract.Id)
-	invoice := stripeInvoiceFixture("in_catalog_wrong_amount", binding.ProviderSubscriptionId)
+	invoice := stripeInvoiceFixture("in_catalog_adjusted_amount", binding.ProviderSubscriptionId)
 	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
 	setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, target.BasePriceMinor-1, stripe.CurrencyUSD, target.StripePriceID)
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
@@ -947,16 +949,16 @@ func TestReconcilePaidInvoiceCatalogMigrationRejectsWrongAmountWithoutSwitch(t *
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
-	require.Error(t, err)
-	require.True(t, IsPermanentPaidInvoiceError(err))
-	var unchanged model.SubscriptionProviderBinding
-	require.NoError(t, model.DB.First(&unchanged, binding.Id).Error)
-	require.Equal(t, binding.PlanId, unchanged.PlanId)
-	require.Equal(t, "price_invoice_plan", unchanged.ProviderPriceId)
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	var switched model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&switched, binding.Id).Error)
+	require.Equal(t, target.PlanID, switched.PlanId)
+	require.Equal(t, target.StripePriceID, switched.ProviderPriceId)
 	var grants int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&grants).Error)
-	require.Equal(t, int64(1), grants)
+	require.Equal(t, int64(2), grants)
 }
 
 func TestReconcilePaidInvoiceCatalogMigrationRejectsWrongCurrencyOrPriceWithoutSwitch(t *testing.T) {
@@ -1006,7 +1008,6 @@ func TestReconcilePaidInvoiceCatalogMigrationSecondCycleRejectsBillingDrift(t *t
 		currency stripe.Currency
 		priceID  string
 	}{
-		{name: "amount", amount: func(snapshot RecurringPlanSnapshotV1) int64 { return snapshot.BasePriceMinor - 1 }, currency: stripe.CurrencyUSD, priceID: "price_catalog_target"},
 		{name: "currency", amount: func(snapshot RecurringPlanSnapshotV1) int64 { return snapshot.BasePriceMinor }, currency: stripe.CurrencyEUR, priceID: "price_catalog_target"},
 		{name: "price", amount: func(snapshot RecurringPlanSnapshotV1) int64 { return snapshot.BasePriceMinor }, currency: stripe.CurrencyUSD, priceID: "price_catalog_other"},
 	}
@@ -1097,7 +1098,9 @@ func TestReconcileFailedInvoiceCatalogMigrationKeepsLegacyRightsAndPendingTarget
 	require.Equal(t, legacyOrderBefore, legacyOrderAfter)
 }
 
-func TestCatalogInvoiceReconciliationClosedSandboxMutatesNothing(t *testing.T) {
+func TestCatalogInvoiceReconciliationRuntimeDriftMutatesNothingAndIsRetryable(t *testing.T) {
+	// The batch was prepared on another service/environment. Nothing may be
+	// mutated, and the webhook must be retried rather than acknowledged.
 	for _, paid := range []bool{true, false} {
 		name := "failed"
 		if paid {
@@ -1107,7 +1110,7 @@ func TestCatalogInvoiceReconciliationClosedSandboxMutatesNothing(t *testing.T) {
 			setupSubscriptionInvoiceServiceTestDB(t)
 			contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 9600, 9601, 9602, "sub_catalog_guard_"+name)
 			enableStripeCatalogInvoiceSandbox(t, contract.Id)
-			t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", "false")
+			t.Setenv("K_SERVICE", "newapi-other")
 			invoice := stripeInvoiceFixture("in_catalog_guard_"+name, binding.ProviderSubscriptionId)
 			subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
 			setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, target.BasePriceMinor, stripe.CurrencyUSD, target.StripePriceID)
@@ -1129,8 +1132,11 @@ func TestCatalogInvoiceReconciliationClosedSandboxMutatesNothing(t *testing.T) {
 			if paid {
 				_, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
 				require.Error(t, err)
+				require.False(t, IsPermanentPaidInvoiceError(err))
 			} else {
-				require.Error(t, ReconcileFailedInvoice(context.Background(), invoice.ID))
+				err := ReconcileFailedInvoice(context.Background(), invoice.ID)
+				require.Error(t, err)
+				require.False(t, IsPermanentPaidInvoiceError(err))
 			}
 			restore()
 			var afterContract model.UserSubscriptionContract
@@ -1152,7 +1158,114 @@ func TestCatalogInvoiceReconciliationClosedSandboxMutatesNothing(t *testing.T) {
 	}
 }
 
-func TestReconcilePaidInvoiceCatalogMigrationRejectsLegacyV1DiscountSnapshot(t *testing.T) {
+func TestReconcilePaidInvoiceCatalogMigrationHonorsScheduledWhenFlagOff(t *testing.T) {
+	// Feature flag and allowlist gate admin operations only; a scheduled
+	// cutover is a committed fact that the paid renewal must honor.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 9610, 9611, 9612, "sub_catalog_flag_off")
+	enableStripeCatalogInvoiceSandbox(t, contract.Id)
+	t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", "false")
+	t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST", "")
+	invoice := stripeInvoiceFixture("in_catalog_flag_off", binding.ProviderSubscriptionId)
+	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
+	setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, target.BasePriceMinor, stripe.CurrencyUSD, target.StripePriceID)
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, target.PlanID, result.Entitlement.PlanId)
+	var applied model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&applied, contract.LatestChangeIntentId).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, applied.Status)
+}
+
+func TestReconcilePaidInvoiceCompensationRequiredLegacyPriceGrantsOrdinaryRenewal(t *testing.T) {
+	// The Stripe schedule call failed (compensation_required): Stripe kept
+	// billing the legacy price. The paid invoice is an ordinary legacy renewal.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement, _ := seedStripeCatalogInvoiceRenewal(t, 9620, 9621, 9622, "sub_catalog_comp_legacy")
+	enableStripeCatalogInvoiceSandbox(t, contract.Id)
+	// prepare succeeded, the Stripe schedule call failed: no pending facts yet.
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", contract.LatestChangeIntentId).Update("status", model.SubscriptionChangeIntentStatusCompensationRequired).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{"pending_plan_id": 0, "pending_effective_at": 0}).Error)
+	invoice := stripeInvoiceFixture("in_catalog_comp_legacy", binding.ProviderSubscriptionId)
+	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, binding.PlanId, result.Entitlement.PlanId)
+	require.Equal(t, oldEntitlement.AmountTotal, result.Entitlement.AmountTotal)
+	var stored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&stored, contract.Id).Error)
+	require.Equal(t, contract.CurrentPlanId, stored.CurrentPlanId)
+	var intent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&intent, contract.LatestChangeIntentId).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusCompensationRequired, intent.Status)
+}
+
+func TestReconcilePaidInvoiceCompensationRequiredTargetPriceAppliesMigration(t *testing.T) {
+	// Stripe executed the schedule but the local finalize was lost
+	// (compensation_required). The paid invoice already bills the target
+	// price, which proves the cutover happened: apply it.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 9630, 9631, 9632, "sub_catalog_comp_target")
+	enableStripeCatalogInvoiceSandbox(t, contract.Id)
+	// prepare succeeded, the local finalize after the Stripe call was lost.
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", contract.LatestChangeIntentId).Update("status", model.SubscriptionChangeIntentStatusCompensationRequired).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{"pending_plan_id": 0, "pending_effective_at": 0}).Error)
+	invoice := stripeInvoiceFixture("in_catalog_comp_target", binding.ProviderSubscriptionId)
+	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
+	setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, target.BasePriceMinor, stripe.CurrencyUSD, target.StripePriceID)
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, target.PlanID, result.Entitlement.PlanId)
+	require.Equal(t, target.TotalAmount, result.Entitlement.AmountTotal)
+	var intent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&intent, contract.LatestChangeIntentId).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, intent.Status)
+	require.Equal(t, invoice.ID, intent.ProviderInvoiceId)
+}
+
+func TestReconcilePaidInvoiceSupersededCatalogIntentRenewsLegacyPlan(t *testing.T) {
+	// A superseded (cancelled) cutover left as latest intent is not a cutover.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement, _ := seedStripeCatalogInvoiceRenewal(t, 9640, 9641, 9642, "sub_catalog_superseded")
+	enableStripeCatalogInvoiceSandbox(t, contract.Id)
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", contract.LatestChangeIntentId).Update("status", model.SubscriptionChangeIntentStatusSuperseded).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{"pending_plan_id": 0, "pending_effective_at": 0}).Error)
+	invoice := stripeInvoiceFixture("in_catalog_superseded", binding.ProviderSubscriptionId)
+	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, binding.PlanId, result.Entitlement.PlanId)
+}
+
+func TestReconcilePaidInvoiceCatalogMigrationAcceptsLegacyV1DiscountSnapshotAndCommits(t *testing.T) {
+	// A discount reserved before this release (snapshot version 1) settles on
+	// a binding that has since gained a typed plan snapshot. The paid invoice
+	// must still grant and commit the reservation; there is no migration or
+	// drain for in-flight v1 reservations.
 	setupSubscriptionInvoiceServiceTestDB(t)
 	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 8997, 8998, 8999, "sub_catalog_v1_discount")
 	enableStripeCatalogInvoiceSandbox(t, contract.Id)
@@ -1174,12 +1287,15 @@ func TestReconcilePaidInvoiceCatalogMigrationRejectsLegacyV1DiscountSnapshot(t *
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
-	require.ErrorContains(t, err, "lacks typed renewal ownership")
-	require.True(t, IsPermanentPaidInvoiceError(err))
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
 	var grants int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&grants).Error)
-	require.Equal(t, int64(1), grants)
+	require.Equal(t, int64(2), grants)
+	var commitCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("terminal_reservation_key = ? AND entry_type = ?", reservationKey, model.SubscriptionDiscountEntryTypeCommit).Count(&commitCount).Error)
+	require.Equal(t, int64(1), commitCount)
 }
 
 func TestLockRenewalBindingFactsTxLocksBindingBeforeContract(t *testing.T) {
@@ -1427,6 +1543,115 @@ func TestReconcilePaidInvoicePendingPlanAcceptsAdaptivePricing(t *testing.T) {
 	require.True(t, result.Applied)
 	require.Equal(t, pendingPlan.Id, result.Entitlement.PlanId)
 	require.Equal(t, int64(999), result.Entitlement.AmountTotal)
+}
+
+func TestReconcilePaidInvoiceStaleTypedSnapshotDoesNotBrickRenewal(t *testing.T) {
+	// A typed snapshot frozen for plan A can be left behind when the binding
+	// later moves to plan B through an upgrade or downgrade. An ordinary
+	// renewal at plan B's catalog price must still grant; the stale snapshot
+	// is ignored instead of turning every future invoice into a permanent error.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8306, 8406, "sub_stale_typed_snapshot")
+	staleSnapshot, err := EncodeRecurringPlanSnapshotV1(RecurringPlanSnapshotV1{
+		Version: RecurringPlanSnapshotVersionV1, PlanID: 8407, StripePriceID: "price_other_plan", Currency: "USD", BasePriceMinor: 999,
+		DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1, QuotaResetPeriod: model.SubscriptionResetMonthly, TotalAmount: 999,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Updates(map[string]interface{}{
+		"current_plan_snapshot": staleSnapshot,
+		"initial_order_id":      seedInitialOrderSnapshotForRenewal(t, 8306, 8406, "sub_stale_typed_snapshot_initial"),
+	}).Error)
+	invoice := stripeInvoiceFixture("in_stale_typed_snapshot", "sub_stale_typed_snapshot")
+	subscription := stripeSubscriptionFixture("sub_stale_typed_snapshot", map[string]string{})
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_stale_typed_snapshot")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, 8406, result.Entitlement.PlanId)
+	require.Equal(t, int64(1234), result.Entitlement.AmountTotal)
+	var reloaded model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloaded, "id = ?", contract.Id).Error)
+	require.Equal(t, result.Entitlement.Id, reloaded.CurrentEntitlementId)
+}
+
+func TestReconcilePaidInvoiceTypedSnapshotRenewalSurvivesPlanEdit(t *testing.T) {
+	// The frozen snapshot is the renewal contract. Editing the catalog plan
+	// afterwards must neither block the renewal nor leak into the grant.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8310, 8410, "sub_typed_survives_edit")
+	frozen, err := EncodeRecurringPlanSnapshotV1(RecurringPlanSnapshotV1{
+		Version: RecurringPlanSnapshotVersionV1, PlanID: 8410, StripePriceID: "price_invoice_plan", Currency: "USD", BasePriceMinor: 1234,
+		DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1, QuotaResetPeriod: model.SubscriptionResetMonthly, TotalAmount: 1234,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("current_plan_snapshot", frozen).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 8410).Updates(map[string]interface{}{"total_amount": 9999, "price_amount": 99.0, "media_credits_monthly": 42}).Error)
+	invoice := stripeInvoiceFixture("in_typed_survives_edit", "sub_typed_survives_edit")
+	subscription := stripeSubscriptionFixture("sub_typed_survives_edit", map[string]string{})
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_typed_survives_edit")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, contract.Id, result.Entitlement.ContractId)
+	require.Equal(t, int64(1234), result.Entitlement.AmountTotal)
+	require.Equal(t, int64(0), result.Entitlement.MediaCreditsTotal)
+}
+
+func TestReconcilePaidInvoicePendingDowngradeClearsTypedSnapshot(t *testing.T) {
+	// A reached scheduled downgrade moves the binding to another plan. The
+	// frozen typed snapshot of the previous plan must not survive that move.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8308, 8408, "sub_downgrade_clears_snapshot")
+	rank := 1
+	pendingPlan := model.SubscriptionPlan{
+		Id: 8409, Title: "Pending Plan", PriceAmount: 9.99, Currency: "USD",
+		DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1, Enabled: true,
+		TierRank: &rank, AllowBalancePay: common.GetPointer(true), TotalAmount: 999,
+		StripePriceId: "price_pending_clears",
+	}
+	require.NoError(t, model.DB.Create(&pendingPlan).Error)
+	frozen, err := EncodeRecurringPlanSnapshotV1(RecurringPlanSnapshotV1{
+		Version: RecurringPlanSnapshotVersionV1, PlanID: 8408, StripePriceID: "price_invoice_plan", Currency: "USD", BasePriceMinor: 1234,
+		DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1, QuotaResetPeriod: model.SubscriptionResetMonthly, TotalAmount: 1234,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("current_plan_snapshot", frozen).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId: contract.Id, UserId: 8308, RequestId: "pending-clears-snapshot",
+		Kind: model.SubscriptionChangeIntentKindDowngrade, PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		Status: model.SubscriptionChangeIntentStatusScheduled, FromPlanId: 8408, ToPlanId: pendingPlan.Id,
+		ProviderBindingId: binding.Id, EffectiveAt: oldEntitlement.EndTime,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"pending_plan_id":         pendingPlan.Id,
+		"pending_effective_at":    oldEntitlement.EndTime,
+		"latest_change_intent_id": intent.Id,
+	}).Error)
+	invoice := stripeInvoiceFixture("in_pending_clears_snapshot", "sub_downgrade_clears_snapshot")
+	subscription := stripeSubscriptionFixture("sub_downgrade_clears_snapshot", map[string]string{})
+	setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, 999, stripe.CurrencyUSD, pendingPlan.StripePriceId)
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_pending_clears_snapshot")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, pendingPlan.Id, result.Entitlement.PlanId)
+	var switched model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&switched, binding.Id).Error)
+	require.Equal(t, pendingPlan.Id, switched.PlanId)
+	require.Empty(t, switched.CurrentPlanSnapshot)
 }
 
 func TestReconcilePaidInvoicePromotesPendingTopUpWithoutDuplicatingEntitlement(t *testing.T) {

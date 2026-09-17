@@ -987,7 +987,12 @@ func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model
 	if plan.Id != intent.ToPlanId || (!plan.Enabled && !planSnapshot.Found) {
 		return errors.New("local plan is not enabled")
 	}
-	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID {
+	// Validate the purchased price, not a catalog edit made while payment was pending.
+	expectedPriceID := strings.TrimSpace(plan.StripePriceId)
+	if planSnapshot.Found && strings.TrimSpace(planSnapshot.Snapshot.StripePriceID) != "" {
+		expectedPriceID = strings.TrimSpace(planSnapshot.Snapshot.StripePriceID)
+	}
+	if expectedPriceID == "" || expectedPriceID != facts.PriceID {
 		return errors.New("Stripe price mismatch")
 	}
 	if facts.Quantity != 1 {

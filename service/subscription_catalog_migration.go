@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -36,6 +35,7 @@ type CatalogMigrationOperationResult struct {
 type CatalogMigrationOperationSummary struct {
 	Total          int `json:"total"`
 	Scheduled      int `json:"scheduled"`
+	Syncing        int `json:"syncing"`
 	Applied        int `json:"applied"`
 	Skipped        int `json:"skipped"`
 	Failed         int `json:"failed"`
@@ -150,6 +150,9 @@ func (s CatalogMigrationService) Apply(ctx context.Context, command CatalogMigra
 		if existing.CohortDigest != command.CohortDigest {
 			return CatalogMigrationOperationResult{}, errors.New("catalog migration request_id was already used with a different digest")
 		}
+		if existing.Status == model.SubscriptionCatalogMigrationBatchStatusCancelled {
+			return CatalogMigrationOperationResult{}, errors.New("catalog migration batch was cancelled and cannot be applied again")
+		}
 		preview, manifestErr := decodeCatalogMigrationStoredManifestForBatch(existing)
 		if manifestErr != nil {
 			return CatalogMigrationOperationResult{}, manifestErr
@@ -192,11 +195,12 @@ func (s CatalogMigrationService) Apply(ctx context.Context, command CatalogMigra
 	if err != nil {
 		return CatalogMigrationOperationResult{}, fmt.Errorf("encode catalog migration manifest: %w", err)
 	}
+	liveMode := strings.EqualFold(strings.TrimSpace(s.Sandbox.DeploymentEnvironment), "production")
 	batch := model.SubscriptionCatalogMigrationBatch{
 		RequestId: command.PreviewRequest.RequestID, CohortDigest: command.CohortDigest,
 		Status: model.SubscriptionCatalogMigrationBatchStatusApplying, ManifestSnapshot: string(manifest),
 		RequestedBy: command.RequestedBy, DeploymentEnvironment: strings.TrimSpace(s.Sandbox.DeploymentEnvironment),
-		ServiceName: strings.TrimSpace(s.Sandbox.ServiceName), SandboxOnly: true, Livemode: false,
+		ServiceName: strings.TrimSpace(s.Sandbox.ServiceName), SandboxOnly: !liveMode, Livemode: liveMode,
 	}
 	if err := s.DB.WithContext(ctx).Create(&batch).Error; err != nil {
 		if existing, found, lookupErr := findCatalogMigrationBatchByRequest(ctx, s.DB, command.PreviewRequest.RequestID); lookupErr == nil && found {
@@ -255,8 +259,19 @@ func (s CatalogMigrationService) Get(ctx context.Context, batchID string) (Catal
 		result.Items = append(result.Items, item)
 		addCatalogMigrationSummaryItem(&result.Summary, item)
 	}
-	result.Batch.Status = catalogMigrationBatchStatus(result.Summary)
+	result.Batch.Status = catalogMigrationEffectiveBatchStatus(batch.Status, result.Summary)
 	return result, nil
+}
+
+// catalogMigrationEffectiveBatchStatus keeps an operator's cancellation
+// sticky: once persisted, the batch never derives back to scheduled/partial
+// from item counts (a contract that never got an intent row would otherwise
+// leave the batch "partial" and re-applicable).
+func catalogMigrationEffectiveBatchStatus(persisted string, summary CatalogMigrationOperationSummary) string {
+	if persisted == model.SubscriptionCatalogMigrationBatchStatusCancelled {
+		return persisted
+	}
+	return catalogMigrationBatchStatus(summary)
 }
 
 func (s CatalogMigrationService) Cancel(ctx context.Context, command CatalogMigrationCancelCommand) (CatalogMigrationOperationResult, error) {
@@ -308,6 +323,9 @@ func (s CatalogMigrationService) Cancel(ctx context.Context, command CatalogMigr
 	if len(cancelErrors) != 0 {
 		return CatalogMigrationOperationResult{}, errors.Join(cancelErrors...)
 	}
+	if err := s.markBatchCancelled(ctx, current.Batch.Id); err != nil {
+		return CatalogMigrationOperationResult{}, err
+	}
 	if err := s.refreshBatchSummary(ctx, current.Batch.Id); err != nil {
 		return CatalogMigrationOperationResult{}, err
 	}
@@ -353,18 +371,25 @@ func (s CatalogMigrationService) processCatalogMigrationPreview(ctx context.Cont
 			Order("id desc").Find(&intents).Error; err != nil {
 			return err
 		}
+		var itemErr error
+		operation := "apply"
 		if len(intents) != 0 {
 			intent := intents[0]
 			if item.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
 				(intent.Status == model.SubscriptionChangeIntentStatusSyncing || intent.Status == model.SubscriptionChangeIntentStatusCompensationRequired) {
-				_ = s.resumeStripeIntent(ctx, batch, item, &intent)
+				operation = "resume"
+				itemErr = s.resumeStripeIntent(ctx, batch, item, &intent)
 			}
-			continue
-		}
-		if item.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
-			_ = s.applyStripeContract(ctx, batch, item)
+		} else if item.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
+			itemErr = s.applyStripeContract(ctx, batch, item)
 		} else {
-			_ = s.applyWalletContract(ctx, batch, item)
+			itemErr = s.applyWalletContract(ctx, batch, item)
+		}
+		if itemErr != nil {
+			// Item failures are persisted on the intent when one exists and are
+			// visible through Get; a contract that never got an intent row is
+			// only observable here.
+			common.SysError(fmt.Sprintf("catalog migration %s failed: batch_id=%s contract_id=%d error=%q", operation, batch.Id, item.ContractID, itemErr.Error()))
 		}
 	}
 	return s.refreshBatchSummary(ctx, batch.Id)
@@ -453,8 +478,8 @@ func (s CatalogMigrationService) prepareStripeContract(ctx context.Context, batc
 		if fingerprintCatalogMigrationBinding(binding) != item.BindingFingerprint {
 			return model.ErrSubscriptionProviderBindingConflict
 		}
-		if !catalogMigrationHasTestStripeCredentials(s.Sandbox) {
-			return errors.New("catalog migration requires Stripe test credentials")
+		if !catalogMigrationCredentialsMatchMode(s.Sandbox) {
+			return errors.New("catalog migration Stripe credentials do not match deployment mode")
 		}
 		if err := freezeCatalogMigrationBindingCurrentSnapshotTx(tx, &binding, item); err != nil {
 			return err
@@ -508,7 +533,7 @@ func (s CatalogMigrationService) prepareStripeContract(ctx context.Context, batc
 }
 
 func (s CatalogMigrationService) resumeStripeIntent(ctx context.Context, batch *model.SubscriptionCatalogMigrationBatch, item CatalogMigrationContractPreviewResult, expected *model.SubscriptionChangeIntent) error {
-	if s.Scheduler == nil || !catalogMigrationHasTestStripeCredentials(s.Sandbox) {
+	if s.Scheduler == nil || (!catalogMigrationHasTestStripeCredentials(s.Sandbox) && !catalogMigrationHasLiveStripeCredentials(s.Sandbox)) {
 		return errors.New("catalog migration provider reconciliation is unavailable")
 	}
 	var prepared preparedStripeCatalogMigration
@@ -804,8 +829,8 @@ func (s CatalogMigrationService) cancelStripeIntent(ctx context.Context, batch *
 		if contract.LatestChangeIntentId != intent.Id || (strings.TrimSpace(binding.ProviderScheduleId) != "" && strings.TrimSpace(intent.ProviderScheduleId) != "" && binding.ProviderScheduleId != intent.ProviderScheduleId) || strings.TrimSpace(intent.ProviderScheduleFingerprint) == "" || !catalogMigrationPendingStateCanClear(contract, intent) {
 			return ErrSubscriptionChangeInProgress
 		}
-		if !catalogMigrationHasTestStripeCredentials(s.Sandbox) {
-			return errors.New("catalog migration requires Stripe test credentials")
+		if !catalogMigrationCredentialsMatchMode(s.Sandbox) {
+			return errors.New("catalog migration Stripe credentials do not match deployment mode")
 		}
 		var targetSnapshot RecurringPlanSnapshotV1
 		targetSnapshot, err := DecodeRecurringPlanSnapshotV1(intent.TargetPlanSnapshot)
@@ -905,12 +930,17 @@ func (s CatalogMigrationService) refreshBatchSummary(ctx context.Context, batchI
 	if err != nil {
 		return err
 	}
-	status := catalogMigrationBatchStatus(result.Summary)
-	summaryJSON, err := json.Marshal(result.Summary)
+	summaryJSON, err := common.Marshal(result.Summary)
 	if err != nil {
 		return err
 	}
-	return s.DB.WithContext(ctx).Model(&model.SubscriptionCatalogMigrationBatch{}).Where("id = ?", batchID).Updates(map[string]any{"status": status, "summary_snapshot": string(summaryJSON), "updated_at": common.GetTimestamp()}).Error
+	// result.Batch.Status already applies the sticky-cancel rule.
+	return s.DB.WithContext(ctx).Model(&model.SubscriptionCatalogMigrationBatch{}).Where("id = ?", batchID).Updates(map[string]any{"status": result.Batch.Status, "summary_snapshot": string(summaryJSON), "updated_at": common.GetTimestamp()}).Error
+}
+
+// markBatchCancelled persists cancellation as a terminal fact on the batch.
+func (s CatalogMigrationService) markBatchCancelled(ctx context.Context, batchID string) error {
+	return s.DB.WithContext(ctx).Model(&model.SubscriptionCatalogMigrationBatch{}).Where("id = ?", batchID).Updates(map[string]any{"status": model.SubscriptionCatalogMigrationBatchStatusCancelled, "updated_at": common.GetTimestamp()}).Error
 }
 
 func findCatalogMigrationBatchByRequest(ctx context.Context, db *gorm.DB, requestID string) (model.SubscriptionCatalogMigrationBatch, bool, error) {
@@ -933,7 +963,7 @@ func encodeCatalogMigrationStoredManifest(preview CatalogMigrationPreviewResult)
 		}
 		stored.Snapshots = append(stored.Snapshots, catalogMigrationStoredContractSnapshot{ContractID: item.ContractID, CurrentPlanSnapshot: item.CurrentPlanSnapshot, TargetPlanSnapshot: item.TargetPlanSnapshot})
 	}
-	payload, err := json.Marshal(stored)
+	payload, err := common.Marshal(stored)
 	if err != nil {
 		return "", fmt.Errorf("encode catalog migration manifest: %w", err)
 	}
@@ -942,7 +972,7 @@ func encodeCatalogMigrationStoredManifest(preview CatalogMigrationPreviewResult)
 
 func decodeCatalogMigrationStoredManifest(raw string) (CatalogMigrationPreviewResult, error) {
 	var stored catalogMigrationStoredManifest
-	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+	if err := common.Unmarshal([]byte(raw), &stored); err != nil {
 		return CatalogMigrationPreviewResult{}, fmt.Errorf("decode catalog migration manifest: %w", err)
 	}
 	if stored.Version != 1 || strings.TrimSpace(stored.Preview.RequestID) == "" {
@@ -1062,6 +1092,8 @@ func addCatalogMigrationSummaryItem(summary *CatalogMigrationOperationSummary, i
 		summary.Skipped++
 	case model.SubscriptionChangeIntentStatusScheduled:
 		summary.Scheduled++
+	case model.SubscriptionChangeIntentStatusSyncing:
+		summary.Syncing++
 	case model.SubscriptionChangeIntentStatusApplied:
 		summary.Applied++
 	case model.SubscriptionChangeIntentStatusSuperseded:
@@ -1090,6 +1122,8 @@ func catalogMigrationBatchStatus(summary CatalogMigrationOperationSummary) strin
 	switch {
 	case summary.NeedsAttention > 0:
 		return model.SubscriptionCatalogMigrationBatchStatusNeedsAttention
+	case summary.Syncing > 0:
+		return model.SubscriptionCatalogMigrationBatchStatusApplying
 	case summary.Applied > 0 && summary.Applied+summary.Skipped == summary.Total:
 		return model.SubscriptionCatalogMigrationBatchStatusApplied
 	case summary.Superseded > 0 && summary.Superseded+summary.Skipped == summary.Total:

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v86"
@@ -181,6 +182,62 @@ func TestCatalogMigrationPreviewRejectsTargetStripePriceDrift(t *testing.T) {
 			require.Equal(t, CatalogMigrationReasonTargetPlanMismatch, result.Contracts[0].Reason)
 		})
 	}
+}
+
+func TestCatalogMigrationPreviewIgnoresConsumedReservationTombstone(t *testing.T) {
+	// A consumed lifecycle reservation keeps token/action as an inactive
+	// tombstone (until=0). Every contract that ever had a Stripe cancel or
+	// resume carries one; it must not read as provider_lifecycle_busy.
+	setupSubscriptionContractServiceTestDB(t)
+	contractID, request, sandbox := seedCatalogMigrationWalletPreview(t)
+	var contract model.UserSubscriptionContract
+	var source, target model.SubscriptionPlan
+	require.NoError(t, model.DB.First(&contract, "id = ?", contractID).Error)
+	require.NoError(t, model.DB.First(&source, "id = ?", request.Mappings[0].SourcePlanID).Error)
+	require.NoError(t, model.DB.First(&target, "id = ?", request.Mappings[0].TargetPlanID).Error)
+	sourceSnapshot, err := recurringSnapshotFromPlanOnly(&source)
+	require.NoError(t, err)
+	encodedSource, err := EncodeRecurringPlanSnapshotV1(sourceSnapshot)
+	require.NoError(t, err)
+	binding := &model.SubscriptionProviderBinding{
+		UserId: contract.UserId, PlanId: source.Id, ContractId: contract.Id,
+		Provider: model.PaymentProviderStripe, ProviderSubscriptionId: "sub_tombstone",
+		ProviderSubscriptionItemId: "si_tombstone", ProviderCustomerId: "cus_tombstone",
+		ProviderPriceId: source.StripePriceId, ProviderStatus: "active",
+		CurrentPeriodStart: contract.CurrentPeriodStart, CurrentPeriodEnd: contract.CurrentPeriodEnd,
+		CurrentPlanSnapshot: encodedSource,
+		LifecycleActionSeq:  3, LifecycleReservationToken: "consumed-resume-token", LifecycleReservationAction: model.SubscriptionProviderLifecycleActionResume, LifecycleReservationUntil: 0,
+	}
+	require.NoError(t, model.DB.Create(binding).Error)
+	require.NoError(t, model.DB.Model(&contract).Updates(map[string]any{
+		"payment_mode": model.SubscriptionPaymentModeStripeRecurring, "renewal_source": model.SubscriptionRenewalSourceProvider,
+		"current_provider_binding_id": binding.Id,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("id = ?", contract.CurrentEntitlementId).Updates(map[string]any{"provider_binding_id": binding.Id, "payment_mode": model.SubscriptionPaymentModeStripeRecurring}).Error)
+	sandbox.StripeSecret = "rk_test_preview"
+	sandbox.StripePublishableKey = "pk_test_preview"
+	price := func(id string) *stripe.Price {
+		return &stripe.Price{ID: id, Active: true, Currency: stripe.CurrencyUSD, UnitAmount: 1000, Type: stripe.PriceTypeRecurring, Recurring: &stripe.PriceRecurring{Interval: stripe.PriceRecurringIntervalMonth, IntervalCount: 1}}
+	}
+	inventory := catalogMigrationPreviewFakeStripe{
+		prices: map[string]*stripe.Price{source.StripePriceId: price(source.StripePriceId), target.StripePriceId: price(target.StripePriceId)},
+		subscription: CatalogMigrationStripeSubscription{
+			ID: binding.ProviderSubscriptionId, CustomerID: binding.ProviderCustomerId,
+			ItemIDs: []string{binding.ProviderSubscriptionItemId}, PriceIDs: []string{binding.ProviderPriceId},
+			Status: "active", CurrentPeriodStart: binding.CurrentPeriodStart, CurrentPeriodEnd: binding.CurrentPeriodEnd,
+		},
+	}
+
+	result, err := previewSubscriptionCatalogMigrationWithDependencies(context.Background(), model.DB, inventory, sandbox, request)
+	require.NoError(t, err)
+	require.True(t, result.Contracts[0].Eligible, result.Contracts[0].Reason)
+
+	// An active reservation is still busy.
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("lifecycle_reservation_until", common.GetTimestamp()+600).Error)
+	result, err = previewSubscriptionCatalogMigrationWithDependencies(context.Background(), model.DB, inventory, sandbox, request)
+	require.NoError(t, err)
+	require.False(t, result.Contracts[0].Eligible)
+	require.Equal(t, CatalogMigrationReasonProviderLifecycleBusy, result.Contracts[0].Reason)
 }
 
 func TestCatalogMigrationPreviewUsesStableGuardAndMappingReasons(t *testing.T) {

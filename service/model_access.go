@@ -32,6 +32,8 @@ type ModelAccessModel struct {
 	ID                     string                  `json:"id"`
 	AllowlistMatchKey      string                  `json:"allowlist_match_key"`
 	Description            string                  `json:"description,omitempty"`
+	Tags                   string                  `json:"tags,omitempty"`
+	DisplayWeight          int                     `json:"display_weight,omitempty"`
 	Vendor                 *ModelAccessVendor      `json:"vendor"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
 	AvailabilityStatus     string                  `json:"availability_status"`
@@ -204,6 +206,8 @@ func resolveStrictModelAccess(groups []string, acceptUnpriced bool) (strictModel
 			ID:                     modelName,
 			AllowlistMatchKey:      AllowlistMatchKey(modelName),
 			Description:            metadata.Description,
+			Tags:                   metadata.Tags,
+			DisplayWeight:          metadata.DisplayWeight,
 			Vendor:                 publicVendor(metadata.Vendor),
 			SupportedEndpointTypes: endpoints,
 			AvailabilityStatus:     availability,

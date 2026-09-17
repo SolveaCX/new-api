@@ -58,7 +58,10 @@ func updateCurrentSubscriptionRenewal(userID int, fromStatus string, toStatus st
 		return nil, errors.New("subscription renewal precondition conflict")
 	}
 	if toStatus == model.SubscriptionRenewalStatusCancelledByUser {
-		version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), userID, 0)
+		// The client's ExpectedChangeVersion is validated inside the supersede
+		// transaction before any Stripe side effect; only a successful
+		// supersede advances the precondition to the new version.
+		version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), userID, 0, precondition.ExpectedChangeVersion)
 		if err != nil {
 			return nil, err
 		}
