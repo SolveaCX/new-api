@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	SubscriptionProviderLifecycleActionCancel      = "cancel"
-	SubscriptionProviderLifecycleActionGraceCancel = "grace_cancel"
-	SubscriptionProviderLifecycleActionResume      = "resume"
+	SubscriptionProviderLifecycleActionCancel           = "cancel"
+	SubscriptionProviderLifecycleActionGraceCancel      = "grace_cancel"
+	SubscriptionProviderLifecycleActionResume           = "resume"
+	SubscriptionProviderLifecycleActionCatalogMigration = "catalog_migration"
 
 	subscriptionProviderLifecycleReservationMaxTTLSeconds int64 = 24 * 60 * 60
 )
@@ -84,7 +85,8 @@ func ReserveSubscriptionProviderLifecycleExactTx(
 	}
 	if action != SubscriptionProviderLifecycleActionCancel &&
 		action != SubscriptionProviderLifecycleActionGraceCancel &&
-		action != SubscriptionProviderLifecycleActionResume {
+		action != SubscriptionProviderLifecycleActionResume &&
+		action != SubscriptionProviderLifecycleActionCatalogMigration {
 		return nil, nil, errors.New("invalid subscription provider lifecycle reservation action")
 	}
 	if token == "" || len(token) > 128 || ttlSeconds <= 0 || ttlSeconds > subscriptionProviderLifecycleReservationMaxTTLSeconds {
@@ -185,7 +187,8 @@ func reserveSubscriptionProviderLifecycle(
 	}
 	if action != SubscriptionProviderLifecycleActionCancel &&
 		action != SubscriptionProviderLifecycleActionGraceCancel &&
-		action != SubscriptionProviderLifecycleActionResume {
+		action != SubscriptionProviderLifecycleActionResume &&
+		action != SubscriptionProviderLifecycleActionCatalogMigration {
 		return nil, nil, errors.New("invalid subscription provider lifecycle reservation action")
 	}
 	if token == "" || len(token) > 128 || ttlSeconds <= 0 || ttlSeconds > subscriptionProviderLifecycleReservationMaxTTLSeconds {
@@ -558,6 +561,14 @@ func EnsureNoActiveSubscriptionProviderLifecycleReservationTx(tx *gorm.DB, bindi
 		return ErrSubscriptionProviderLifecycleConflict
 	}
 	return nil
+}
+
+// SubscriptionProviderLifecycleReservationIsActive reports whether a binding
+// currently holds a live lifecycle lease. A consumed reservation keeps its
+// token/action as an inactive tombstone (until=0) and an expired one keeps
+// all three fields; neither blocks a new owner.
+func SubscriptionProviderLifecycleReservationIsActive(binding *SubscriptionProviderBinding, now int64) bool {
+	return subscriptionProviderLifecycleReservationIsActive(binding, now)
 }
 
 func subscriptionProviderLifecycleReservationIsActive(binding *SubscriptionProviderBinding, now int64) bool {

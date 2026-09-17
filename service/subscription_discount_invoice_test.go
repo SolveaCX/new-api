@@ -113,6 +113,14 @@ func expireSubscriptionDiscountReservationForTest(t *testing.T, reservationKey s
 	require.NoError(t, model.DB.Exec("UPDATE subscription_discount_entries SET expires_at = ? WHERE idempotency_key = ?", common.GetTimestamp()-10, reservationKey).Error)
 }
 
+func TestParseStripeSubscriptionDiscountInvoiceSnapshotKeepsLegacyV1Readable(t *testing.T) {
+	raw := `{"version":1,"source":"stripe_renewal_invoice_discount","funding_source":"invitee","invoice_id":"in_legacy_v1","subscription_id":"sub_legacy_v1","binding_id":1,"contract_id":2,"plan_id":3,"user_id":4,"currency":"USD","canonical_usd_minor":1234,"original_subtotal_minor":1234,"existing_discount_minor":0,"selected_invitation_usd_minor":300,"selected_invitation_local_minor":300,"incremental_item_minor":300,"expected_final_payment_minor":934,"account_available_before":500,"account_available_remaining":200,"account_reserved_before":0,"account_reserved_after":300,"reservation_key":"stripe-invoice:in_legacy_v1:reserve","item_idempotency_key":"stripe-invoice:in_legacy_v1:adjustment"}`
+	snapshot, err := parseStripeSubscriptionDiscountInvoiceSnapshot(raw)
+	require.NoError(t, err)
+	require.Equal(t, 1, snapshot.Version)
+	require.Empty(t, snapshot.PlanSnapshotFingerprint)
+}
+
 func resetStripeSubscriptionDiscountInvoiceReconciliationCursorForTest(t *testing.T) {
 	t.Helper()
 	require.NoError(t, model.DB.Where("key = ?", stripeSubscriptionDiscountInvoiceReconciliationCursorOptionKey).Delete(&model.Option{}).Error)
@@ -266,7 +274,7 @@ func TestSubscriptionDiscountInvoicePrepareFailsClosedOnConflictingExistingAdjus
 	recorder.existingItems = []*stripe.InvoiceItem{
 		stripeDiscountInvoiceItemFixture("ii_conflict", inv.ID, -301, stripe.CurrencyUSD, map[string]string{
 			"source":                                     "new-api",
-			"subscription_discount_version":              "1",
+			"subscription_discount_version":              "2",
 			"subscription_discount_source":               "stripe_renewal_invoice_discount",
 			"subscription_discount_invoice_id":           inv.ID,
 			"subscription_discount_reservation_key":      "stripe-invoice:in_discount_item_conflict:reserve",
@@ -298,7 +306,7 @@ func TestSubscriptionDiscountInvoicePrepareFailsClosedOnDuplicateExistingAdjustm
 	setStripeSubscriptionCurrentPeriod(sub, entitlement.EndTime, entitlement.EndTime+2592000)
 	metadata := map[string]string{
 		"source":                                     "new-api",
-		"subscription_discount_version":              "1",
+		"subscription_discount_version":              "2",
 		"subscription_discount_source":               "stripe_renewal_invoice_discount",
 		"subscription_discount_invoice_id":           inv.ID,
 		"subscription_discount_reservation_key":      "stripe-invoice:in_discount_item_duplicate:reserve",
@@ -367,6 +375,36 @@ func TestSubscriptionDiscountInvoicePrepareItemFailureKeepsPausedAndRetriesWitho
 	require.Equal(t, []int64{-300}, recorder.items)
 	var reserveCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("idempotency_key = ?", "stripe-invoice:in_discount_retry:reserve").Count(&reserveCount).Error)
+	require.Equal(t, int64(1), reserveCount)
+}
+
+func TestSubscriptionDiscountInvoicePrepareReplayTolerantOfRecomputedSubtotal(t *testing.T) {
+	// After the first prepare adds the negative invoice item, Stripe recomputes
+	// the draft invoice subtotal. A redelivered invoice.created (or the stale
+	// reconciler) must still recognize the existing reservation instead of
+	// failing on a subtotal comparison.
+	setupSubscriptionInvoiceServiceTestDB(t)
+	_, binding, entitlement := seedStripeRenewalContract(t, 9223, 9323, "sub_discount_replay_subtotal")
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("initial_order_id", seedInitialOrderSnapshotForRenewal(t, 9223, 9323, "sub_discount_replay_subtotal_initial")).Error)
+	grantRenewalInvitationCredit(t, 9223, 500, "grant-renewal-replay-subtotal")
+	inv := draftRenewalInvoiceFixture("in_discount_replay_subtotal", "sub_discount_replay_subtotal")
+	inv.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
+	sub := stripeSubscriptionFixture("sub_discount_replay_subtotal", map[string]string{})
+	setStripeSubscriptionCurrentPeriod(sub, entitlement.EndTime, entitlement.EndTime+2592000)
+	recorder := &stripeRenewalInvoiceMutationRecorder{}
+	replaceStripeRenewalInvoiceAccessors(t, inv, sub, recorder)
+
+	require.NoError(t, PrepareStripeSubscriptionDiscountInvoice(context.Background(), "in_discount_replay_subtotal"))
+	require.Equal(t, []int64{-300}, recorder.items)
+	// Stripe applied the item: subtotal, due and total all drop by 300.
+	inv.Subtotal -= 300
+	inv.AmountDue -= 300
+	inv.Total -= 300
+
+	require.NoError(t, PrepareStripeSubscriptionDiscountInvoice(context.Background(), "in_discount_replay_subtotal"))
+	require.Equal(t, []int64{-300}, recorder.items)
+	var reserveCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("idempotency_key = ?", "stripe-invoice:in_discount_replay_subtotal:reserve").Count(&reserveCount).Error)
 	require.Equal(t, int64(1), reserveCount)
 }
 
@@ -647,6 +685,9 @@ func TestSubscriptionDiscountInvoicePaidValidationAcceptsStripeAdjustedFinalPaym
 	restore := replaceStripeInvoiceReconcilers(t, inv, sub)
 	defer restore()
 
+	// Stripe may adjust the final charge (tax, customer credit balance,
+	// coupons, rounding). The identity contract is the price id, currency and
+	// ownership facts, never the amount.
 	result, err := ReconcilePaidInvoice(context.Background(), "in_discount_paid_mismatch")
 	require.NoError(t, err)
 	require.True(t, result.Applied)
@@ -714,6 +755,8 @@ func TestSubscriptionDiscountInvoiceLatePaidAfterReleaseGrantsEntitlementWithout
 	restore := replaceStripeInvoiceReconcilers(t, inv, sub)
 	defer restore()
 
+	// The customer paid. A discount reservation that was already released
+	// must not block the renewal grant; it only means no ledger commit happens.
 	first, err := ReconcilePaidInvoice(context.Background(), "in_discount_late_paid")
 	require.NoError(t, err)
 	require.True(t, first.Applied)

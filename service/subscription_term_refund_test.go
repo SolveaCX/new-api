@@ -1,8 +1,8 @@
 package service
 
 import (
-	"fmt"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -29,11 +29,9 @@ func setupWalletRenewalRedis(t *testing.T) *miniredis.Miniredis {
 
 func cacheUserQuota(t *testing.T, userID int, quota int) {
 	t.Helper()
-	require.NoError(t, common.RedisHSetObj(
-		fmt.Sprintf("user:v2:%d", userID),
-		&model.UserBase{Id: userID, Quota: quota, Status: common.UserStatusEnabled, Group: "plg"},
-		0,
-	))
+	cached, err := model.GetUserCache(userID)
+	require.NoError(t, err)
+	require.Equal(t, quota, cached.Quota)
 }
 
 func TestRefundSubscriptionTermSegmentCreditsOnlyNotStartedOneTimeCanonicalValue(t *testing.T) {
@@ -171,12 +169,22 @@ func TestRefundSubscriptionTermSegmentInvalidatesUserCacheAfterCredit(t *testing
 	term := model.SubscriptionTermSegment{ContractId: contract.Id, OrderId: order.Id, PlanId: plan.Id, SegmentIndex: 0, StartTime: common.GetTimestamp() + 3600, AllocatedMoney: plan.PriceAmount, Status: model.SubscriptionTermStatusNotStarted}
 	require.NoError(t, model.DB.Create(&term).Error)
 	cacheUserQuota(t, 7603, 25)
-	require.True(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7603)))
+	require.Eventually(t, func() bool {
+		return len(mr.Keys()) == 1
+	}, time.Second, 10*time.Millisecond)
+	userCacheKey := mr.Keys()[0]
+	require.Contains(t, userCacheKey, "7603")
 
 	_, err := RefundSubscriptionTermSegment(7603, term.Id)
 
 	require.NoError(t, err)
-	require.False(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7603)))
+	require.False(t, mr.Exists(userCacheKey))
+	refreshed, err := model.GetUserCache(7603)
+	require.NoError(t, err)
+	require.Equal(t, 1225, refreshed.Quota)
+	require.Eventually(t, func() bool {
+		return mr.Exists(userCacheKey)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestRefundSubscriptionTermSegmentReplaysCompletedRefundWithoutCreditingTwice(t *testing.T) {
