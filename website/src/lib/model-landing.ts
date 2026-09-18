@@ -2,6 +2,7 @@ import { LOCALES, type Locale } from "./locales";
 import { withIdFallback } from "@/lib/locales";
 import { formatUsdPrice, type PricingModel } from "./pricing";
 import { resolveImageDisplayPrice } from "./home-models";
+import { modelPublicPath, modelPublicSlug } from "./model-public-url";
 import {
   getPriorityModelCopy,
   getPriorityModelTranslationMapForSource,
@@ -2147,7 +2148,7 @@ export function buildModelLandingMetadata(
     context,
     locale,
   }));
-  return { title, description, pathname: options.pathname ?? `/models/${encodeURIComponent(model.model_name)}`, ...(options.locale ? { locale: options.locale } : {}) };
+  return { title, description, pathname: options.pathname ?? modelPublicPath(model.model_name), ...(options.locale ? { locale: options.locale } : {}) };
 }
 
 const PRIORITY_METADATA_DISPLAY_NAMES: Record<string, string> = {
@@ -2464,7 +2465,7 @@ export function modelLandingConfigForModel(config: ModelConfig, model: PricingMo
   return {
     ...config,
     ...priorityOverride,
-    slug: PRIORITY_CANONICAL_SLUGS[normalizedModelId] ?? encodeURIComponent(model.model_name),
+    slug: PRIORITY_CANONICAL_SLUGS[normalizedModelId] ?? modelPublicSlug(model.model_name),
     modelIds: [model.model_name, ...config.modelIds],
     displayName: model.model_name,
     modelId: model.model_name,
@@ -2775,7 +2776,7 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
   const mediaProfile = getGenericMediaProfile(model, kind);
   const metadata = buildModelLandingMetadata(model, { locale: "en", task: metadataTaskForLandingKind(kind) });
   return {
-    slug: encodeURIComponent(model.model_name),
+    slug: modelPublicSlug(model.model_name),
     modelIds: [model.model_name],
     displayName,
     modelId: model.model_name,
@@ -2835,7 +2836,7 @@ function buildGenericTextLandingConfig(model: PricingModel): ModelConfig {
   const metadata = buildModelLandingMetadata(model, { locale: "en" });
 
   return {
-    slug: encodeURIComponent(model.model_name),
+    slug: modelPublicSlug(model.model_name),
     modelIds: [model.model_name],
     displayName,
     modelId: model.model_name,

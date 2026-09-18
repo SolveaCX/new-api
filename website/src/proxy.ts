@@ -7,6 +7,7 @@ import {
 import { isLocale, localizePath } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
 import { getSkagLandingLocales } from "@/lib/skag-landing";
+import { modelPublicSlug } from "@/lib/model-public-url";
 
 const WEBSITE_PUBLIC_PRICING_GROUP = "plg";
 const PERMANENT_LEGACY_PATHS = new Map([
@@ -91,7 +92,7 @@ export function resolveModelAliasRedirectPath(pathname: string, modelNames: read
     namesByLowerCase.get(fullModelId.toLowerCase()) ?? namesByLowerCase.get(unprefixedModelId.toLowerCase());
   if (!modelName) return null;
 
-  const slug = CANONICAL_MODEL_SLUG_OVERRIDES.get(modelName.toLowerCase()) ?? encodeURIComponent(modelName);
+  const slug = CANONICAL_MODEL_SLUG_OVERRIDES.get(modelName.toLowerCase()) ?? modelPublicSlug(modelName);
   return `${alias.locale ? `/${alias.locale}` : ""}/models/${slug}`;
 }
 

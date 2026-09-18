@@ -417,6 +417,35 @@ describe("model landing configuration", () => {
     expect(config.generator?.protocol).toBe("gemini-image");
   });
 
+  test("uses routable canonical slugs for slash-containing media and text models", () => {
+    const media = getModelLandingConfigForPricingModel({
+      model_name: "openai/gpt-image-2.5-flare",
+      vendor_name: "OpenAI",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.05,
+      completion_ratio: 0,
+      supported_endpoint_types: ["image-generation"],
+    });
+    const text = getModelLandingConfigForPricingModel({
+      model_name: "typesafe/jev-1.13",
+      vendor_name: "Typesafe",
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 1,
+      supported_endpoint_types: ["openai"],
+    });
+    expect(media.slug).toBe("openai~2Fgpt-image-2.5-flare");
+    expect(text.slug).toBe("typesafe~2Fjev-1.13");
+    expect(buildModelLandingMetadata({
+      model_name: "openai/gpt-image-2.5-flare",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.05,
+      completion_ratio: 0,
+    }).pathname).toBe("/models/openai~2Fgpt-image-2.5-flare");
+  });
+
   test("keeps dynamic media Playground fields aligned with each model contract", () => {
     const grok = getModelLandingConfigForPricingModel({
       model_name: "grok-imagine-video",

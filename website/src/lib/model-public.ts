@@ -1,4 +1,6 @@
 import { modelIconKey, resolveImageDisplayPrice as resolveHomeImageDisplayPrice } from "@/lib/home-models";
+import { modelPublicSlug } from "./model-public-url";
+export { modelPublicPath, modelPublicSlug } from "./model-public-url";
 import { withIdFallback } from "@/lib/locales";
 import type { Locale } from "@/lib/locales";
 import {
@@ -53,18 +55,16 @@ export function resolvePublicModel(models: PricingModel[], slug: string): Pricin
   } catch {
     return null;
   }
+  // A slash in a model ID cannot be percent-encoded into a Next.js dynamic
+  // path segment: Next redirects that URL to itself. Match its safe public
+  // slug before falling back to historical model-name aliases.
+  const canonical = models.find((model) => modelPublicSlug(model.model_name) === slug);
+  if (canonical) return canonical;
   const exact = models.find((model) => model.model_name === decoded);
   if (exact) return exact;
   const key = normalizeModelKey(decoded);
   if (!key) return null;
   return models.find((model) => normalizeModelKey(model.model_name) === key) ?? null;
-}
-
-export function modelPublicPath(modelName: string): string {
-  // This catalog ID has a lowercase canonical page. Preserve the actual model
-  // identifier everywhere else (notably API requests and pricing lookups).
-  const slug = modelName.toLowerCase() === "minimax-h3" ? "minimax-h3" : encodeURIComponent(modelName);
-  return `/models/${slug}`;
 }
 
 // Which request example the page shows. Image-generation models demo

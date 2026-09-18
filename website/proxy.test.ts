@@ -203,7 +203,10 @@ describe("website proxy language redirects", () => {
         "google/model-with-slash",
         "model-with-slash",
       ])
-    ).toBe("/models/google%2Fmodel-with-slash");
+    ).toBe("/models/google~2Fmodel-with-slash");
+    expect(resolveModelAliasRedirectPath("/models/openai/gpt-image-2.5-flare", [
+      "openai/gpt-image-2.5-flare",
+    ])).toBe("/models/openai~2Fgpt-image-2.5-flare");
   });
 
   test("does not rewrite canonical model pages or unrelated nested paths", () => {
