@@ -7180,6 +7180,11 @@
     "supplier bids · live": "supplier bids · live",
     "{{count}} requests": "{{count}} requests",
     "matched": "matched",
-    "Featured": "Featured"
+    "Featured": "Featured",
+    "1-hour create cache ratio": "Razão de criação de cache de 1 hora",
+    "Optional ratio applied to 1-hour cache creation. If omitted, the legacy 1.6x multiplier is used.": "Razão opcional para criação de cache de 1 hora; se omitida, usa o multiplicador antigo de 1,6.",
+    "1-hour cache write price": "Preço de gravação de cache de 1 hora",
+    "Optional token price for creating cache entries with a 1-hour TTL. If omitted, the legacy 1.6x multiplier is used.": "Preço opcional por token para criar cache com TTL de 1 hora; se omitido, usa o multiplicador antigo de 1,6.",
+    "Cache write (1h)": "Gravação de cache (1 h)"
   }
 }

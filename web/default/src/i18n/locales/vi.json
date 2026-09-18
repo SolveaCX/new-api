@@ -7180,6 +7180,11 @@
     "supplier bids · live": "supplier bids · live",
     "{{count}} requests": "{{count}} requests",
     "matched": "matched",
-    "Featured": "Featured"
+    "Featured": "Featured",
+    "1-hour create cache ratio": "Tỷ lệ tạo bộ nhớ đệm 1 giờ",
+    "Optional ratio applied to 1-hour cache creation. If omitted, the legacy 1.6x multiplier is used.": "Tỷ lệ tùy chọn cho việc tạo bộ nhớ đệm 1 giờ; nếu bỏ trống, dùng hệ số cũ 1,6.",
+    "1-hour cache write price": "Giá ghi bộ nhớ đệm 1 giờ",
+    "Optional token price for creating cache entries with a 1-hour TTL. If omitted, the legacy 1.6x multiplier is used.": "Giá token tùy chọn để tạo bộ nhớ đệm TTL 1 giờ; nếu bỏ trống, dùng hệ số cũ 1,6.",
+    "Cache write (1h)": "Ghi bộ nhớ đệm (1 giờ)"
   }
 }

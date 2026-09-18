@@ -7180,6 +7180,11 @@
     "supplier bids · live": "供给方报价 · 实时",
     "{{count}} requests": "{{count}} 张需求单",
     "matched": "已撮合",
-    "Featured": "精选"
+    "Featured": "精选",
+    "1-hour create cache ratio": "1 小时缓存创建倍率",
+    "Optional ratio applied to 1-hour cache creation. If omitted, the legacy 1.6x multiplier is used.": "1 小时缓存创建时使用的可选倍率；未填写时沿用旧的 1.6 倍计算。",
+    "1-hour cache write price": "1 小时缓存写入价格",
+    "Optional token price for creating cache entries with a 1-hour TTL. If omitted, the legacy 1.6x multiplier is used.": "1 小时 TTL 缓存创建的可选 token 价格；未填写时沿用旧的 1.6 倍计算。",
+    "Cache write (1h)": "缓存写入（1 小时）"
   }
 }

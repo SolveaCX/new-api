@@ -47,6 +47,7 @@ type ModelFormValues = {
   ModelRatio: string
   CacheRatio: string
   CreateCacheRatio: string
+  CreateCacheRatio1h: string
   CompletionRatio: string
   ImageRatio: string
   AudioRatio: string
@@ -71,6 +72,7 @@ type ModelJsonFieldName =
   | 'ModelRatio'
   | 'CacheRatio'
   | 'CreateCacheRatio'
+  | 'CreateCacheRatio1h'
   | 'CompletionRatio'
   | 'ImageRatio'
   | 'AudioRatio'
@@ -102,6 +104,12 @@ const modelJsonFields: Array<{
     labelKey: 'Create cache ratio',
     descriptionKey:
       'Ratio applied when creating cache entries for supported models.',
+  },
+  {
+    name: 'CreateCacheRatio1h',
+    labelKey: '1-hour create cache ratio',
+    descriptionKey:
+      'Optional ratio applied to 1-hour cache creation. If omitted, the legacy 1.6x multiplier is used.',
   },
   {
     name: 'CompletionRatio',
@@ -239,6 +247,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedModelRatio={savedValues.ModelRatio}
               savedCacheRatio={savedValues.CacheRatio}
               savedCreateCacheRatio={savedValues.CreateCacheRatio}
+              savedCreateCacheRatio1h={savedValues.CreateCacheRatio1h}
               savedCompletionRatio={savedValues.CompletionRatio}
               savedImageRatio={savedValues.ImageRatio}
               savedAudioRatio={savedValues.AudioRatio}
@@ -250,6 +259,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
               createCacheRatio={form.watch('CreateCacheRatio')}
+              createCacheRatio1h={form.watch('CreateCacheRatio1h')}
               completionRatio={form.watch('CompletionRatio')}
               imageRatio={form.watch('ImageRatio')}
               audioRatio={form.watch('AudioRatio')}

@@ -27,6 +27,7 @@ export const createModelPricingSchema = (t: (key: string) => string) =>
     ratio: z.string().optional(),
     cacheRatio: z.string().optional(),
     createCacheRatio: z.string().optional(),
+    createCacheRatio1h: z.string().optional(),
     completionRatio: z.string().optional(),
     imageRatio: z.string().optional(),
     audioRatio: z.string().optional(),
@@ -43,6 +44,7 @@ export type LaneKey =
   | 'completion'
   | 'cache'
   | 'createCache'
+  | 'createCache1h'
   | 'image'
   | 'audioInput'
   | 'audioOutput'
@@ -53,6 +55,7 @@ export type ModelRatioData = {
   ratio?: string
   cacheRatio?: string
   createCacheRatio?: string
+  createCacheRatio1h?: string
   completionRatio?: string
   imageRatio?: string
   audioRatio?: string
@@ -77,6 +80,7 @@ export const EMPTY_LANE_PRICES: Record<LaneKey, string> = {
   completion: '',
   cache: '',
   createCache: '',
+  createCache1h: '',
   image: '',
   audioInput: '',
   audioOutput: '',
@@ -86,6 +90,7 @@ export const EMPTY_LANE_ENABLED: Record<LaneKey, boolean> = {
   completion: false,
   cache: false,
   createCache: false,
+  createCache1h: false,
   image: false,
   audioInput: false,
   audioOutput: false,
@@ -95,6 +100,7 @@ export const ratioFieldByLane: Record<LaneKey, keyof ModelPricingFormValues> = {
   completion: 'completionRatio',
   cache: 'cacheRatio',
   createCache: 'createCacheRatio',
+  createCache1h: 'createCacheRatio1h',
   image: 'imageRatio',
   audioInput: 'audioRatio',
   audioOutput: 'audioCompletionRatio',
@@ -123,6 +129,13 @@ export const laneConfigs: Array<{
     titleKey: 'Cache write price',
     descriptionKey: 'Token price for creating cache entries.',
     placeholder: '3.75',
+  },
+  {
+    key: 'createCache1h',
+    titleKey: '1-hour cache write price',
+    descriptionKey:
+      'Optional token price for creating cache entries with a 1-hour TTL. If omitted, the legacy 1.6x multiplier is used.',
+    placeholder: '6',
   },
   {
     key: 'image',
@@ -188,6 +201,7 @@ export function createInitialLaneState(data?: ModelRatioData | null) {
     completion: deriveLanePrice(data.completionRatio, promptPrice),
     cache: deriveLanePrice(data.cacheRatio, promptPrice),
     createCache: deriveLanePrice(data.createCacheRatio, promptPrice),
+    createCache1h: deriveLanePrice(data.createCacheRatio1h, promptPrice),
     image: deriveLanePrice(data.imageRatio, promptPrice),
     audioInput: audioInputPrice,
     audioOutput: deriveLanePrice(data.audioCompletionRatio, audioInputPrice),
@@ -200,6 +214,7 @@ export function createInitialLaneState(data?: ModelRatioData | null) {
       completion: hasValue(data.completionRatio),
       cache: hasValue(data.cacheRatio),
       createCache: hasValue(data.createCacheRatio),
+      createCache1h: hasValue(data.createCacheRatio1h),
       image: hasValue(data.imageRatio),
       audioInput: hasValue(data.audioRatio),
       audioOutput: hasValue(data.audioCompletionRatio),
