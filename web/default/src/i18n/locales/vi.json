@@ -4177,7 +4177,7 @@
     "Server logging is not enabled (log directory not configured)": "Nhật ký máy chủ chưa được bật (chưa cấu hình thư mục nhật ký)",
     "Server Token": "Mã thông báo máy chủ",
     "Service account JSON file(s)": "Tệp JSON tài khoản dịch vụ",
-    "Session expired!": "Phiên hết hạn!",
+    "Session expired!": "Phiên đã hết hạn. Vui lòng đăng nhập lại!",
     "Session expired?": "Phiên đã hết hạn?",
     "Set": "Đặt",
     "Set a discount rate for a specific recharge amount threshold.": "Đặt tỷ lệ chiết khấu cho một ngưỡng số tiền nạp cụ thể.",

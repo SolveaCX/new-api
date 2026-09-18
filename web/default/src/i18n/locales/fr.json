@@ -4177,7 +4177,7 @@
     "Server logging is not enabled (log directory not configured)": "La journalisation serveur n'est pas activée (répertoire non configuré)",
     "Server Token": "Jeton de serveur",
     "Service account JSON file(s)": "Fichier(s) JSON de compte de service",
-    "Session expired!": "Session expirée !",
+    "Session expired!": "La session a expiré. Veuillez vous reconnecter !",
     "Session expired?": "Session expirée ?",
     "Set": "Définir",
     "Set a discount rate for a specific recharge amount threshold.": "Définir un taux de réduction pour un seuil de montant de recharge spécifique.",

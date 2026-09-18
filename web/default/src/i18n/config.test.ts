@@ -54,6 +54,17 @@ const conversionAmountTranslations: Record<string, string> = {
   vi: 'Số tiền chuyển đổi',
 }
 
+const sessionExpiredTranslations: Record<string, string> = {
+  en: 'Session expired. Please log in again!',
+  es: 'La sesión ha expirado. Inicia sesión de nuevo.',
+  fr: 'La session a expiré. Veuillez vous reconnecter !',
+  ja: 'セッションの有効期限が切れました。再度ログインしてください。',
+  pt: 'A sessão expirou. Faça login novamente!',
+  ru: 'Сессия истекла. Войдите снова!',
+  vi: 'Phiên đã hết hạn. Vui lòng đăng nhập lại!',
+  zh: '会话已过期，请重新登录！',
+}
+
 const retiredFlatkeyShortWindowCopyKeys = [
   'Short-term cap: {{fiveHour}} / 5 h · {{weekly}} / 7 days',
   'Rolling 5-hour usage',
@@ -242,6 +253,16 @@ describe('i18n language detection', () => {
   })
 })
 
+describe('session expiry copy', () => {
+  test('asks users to log in again in every supported language', () => {
+    for (const [locale, expected] of Object.entries(
+      sessionExpiredTranslations
+    )) {
+      expect(localeTranslations[locale]['Session expired!']).toBe(expected)
+    }
+  })
+})
+
 describe('i18n operational Activity and Recall copy', () => {
   test('locks exact Vietnamese global Email translation', () => {
     expect(localeTranslations.vi.Email).toBe('Địa chỉ email')
@@ -324,9 +345,7 @@ describe('i18n operational Activity and Recall copy', () => {
     for (const key of retiredFlatkeyShortWindowCopyKeys) {
       expect(STATIC_I18N_KEYS).not.toContain(key)
 
-      for (const [locale, translations] of Object.entries(
-        localeTranslations
-      )) {
+      for (const [locale, translations] of Object.entries(localeTranslations)) {
         expect(
           Object.prototype.hasOwnProperty.call(translations, key),
           `${locale} still contains ${key}`

@@ -4177,7 +4177,7 @@
     "Server logging is not enabled (log directory not configured)": "Server logging is not enabled (log directory not configured)",
     "Server Token": "Server Token",
     "Service account JSON file(s)": "Service account JSON file(s)",
-    "Session expired!": "Session expired!",
+    "Session expired!": "Session expired. Please log in again!",
     "Session expired?": "Session expired?",
     "Set": "Set",
     "Set a discount rate for a specific recharge amount threshold.": "Set a discount rate for a specific recharge amount threshold.",

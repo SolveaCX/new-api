@@ -4177,7 +4177,7 @@
     "Server logging is not enabled (log directory not configured)": "サーバーログが有効になっていません（ログディレクトリが未設定）",
     "Server Token": "サーバートークン",
     "Service account JSON file(s)": "サービスアカウントJSONファイル",
-    "Session expired!": "セッションが期限切れです！",
+    "Session expired!": "セッションの有効期限が切れました。再度ログインしてください。",
     "Session expired?": "セッションが期限切れになりましたか？",
     "Set": "設定",
     "Set a discount rate for a specific recharge amount threshold.": "特定のチャージ金額のしきい値に対して割引率を設定します。",

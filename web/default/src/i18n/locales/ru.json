@@ -4177,7 +4177,7 @@
     "Server logging is not enabled (log directory not configured)": "Журналирование сервера не включено (каталог журналов не настроен)",
     "Server Token": "Токен сервера",
     "Service account JSON file(s)": "JSON-файл сервисного аккаунта",
-    "Session expired!": "Сессия истекла!",
+    "Session expired!": "Сессия истекла. Войдите снова!",
     "Session expired?": "Сессия истекла?",
     "Set": "Установить",
     "Set a discount rate for a specific recharge amount threshold.": "Установите ставку скидки для определенного порога суммы пополнения.",
