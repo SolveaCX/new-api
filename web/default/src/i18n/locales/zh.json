@@ -4177,7 +4177,7 @@
     "Server logging is not enabled (log directory not configured)": "服务器日志功能未启用（未配置日志目录）",
     "Server Token": "服务器 Token",
     "Service account JSON file(s)": "服务账号 JSON 文件",
-    "Session expired!": "会话已过期！",
+    "Session expired!": "会话已过期，请重新登录！",
     "Session expired?": "会话已过期？",
     "Set": "设置",
     "Set a discount rate for a specific recharge amount threshold.": "为特定的充值金额阈值设置折扣率。",

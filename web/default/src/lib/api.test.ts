@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { InternalAxiosRequestConfig } from 'axios'
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { toast } from 'sonner'
 import {
   protectRecallClaimRedirectForAuth,
   resolvePendingPostLoginRedirect,
@@ -53,6 +55,40 @@ afterEach(() => {
 })
 
 describe('API 401 auth reset lifecycle', () => {
+  test('uses one stable toast id for concurrent session expiry errors', async () => {
+    installWindowStorage()
+    const toastSpy = spyOn(toast, 'error').mockImplementation(
+      () => 'session-expired'
+    )
+    const rejectAsUnauthorized = async (config: InternalAxiosRequestConfig) => {
+      throw {
+        config,
+        response: { status: 401 },
+      }
+    }
+
+    await Promise.all([
+      api
+        .get('/test/session-expired/one', {
+          disableDuplicate: true,
+          adapter: rejectAsUnauthorized,
+        })
+        .catch(() => undefined),
+      api
+        .get('/test/session-expired/two', {
+          disableDuplicate: true,
+          adapter: rejectAsUnauthorized,
+        })
+        .catch(() => undefined),
+    ])
+
+    expect(toastSpy).toHaveBeenCalledTimes(2)
+    expect(
+      toastSpy.mock.calls.every((call) => call[1]?.id === 'session-expired')
+    ).toBe(true)
+    toastSpy.mockRestore()
+  })
+
   test('preserves a pending recall redirect for the OAuth logout preflight only', async () => {
     installWindowStorage()
     const protectedRedirect = protectRecallClaimRedirectForAuth(
