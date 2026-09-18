@@ -2,15 +2,13 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
-	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,28 +16,21 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/QuantumNous/new-api/service/sessioncapture"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-const (
-	sessionStoreQueueSize          = 256
-	sessionStoreWorkerCount        = 4
-	sessionStoreUploadTimeout      = 15 * time.Second
-	sessionStoreMaxTranscriptBytes = 10 * 1024 * 1024
-	sessionStoreMaxBodyBytes       = sessionStoreMaxTranscriptBytes
-)
+const sessionStoreMaxBodyBytes = 10 * 1024 * 1024
 
 var (
-	sessionStoreURL      = strings.TrimSpace(os.Getenv("SESSION_STORE_URL"))
-	sessionStoreTenantID = sessionStoreEnvOrDefault("SESSION_STORE_TENANT_ID", "flatkey")
-
-	sessionStoreQueue       = make(chan sessionStorePayload, sessionStoreQueueSize)
-	sessionStoreWorkers     sync.Once
-	sessionStoreHTTPClient  = newSessionStoreHTTPClient()
-	sessionStoreAsyncRunner = enqueueSessionStorePayload
+	sessionCaptureEnabled     = sessioncapture.Enabled()
+	sessionCaptureTenantID    = sessionStoreEnvOrDefault("SESSION_CAPTURE_TENANT_ID", "flatkey")
+	sessionCaptureAllowedUser = sessionStoreOptionalUserID("SESSION_CAPTURE_USER_ID")
+	sessionCapturePublish     = sessioncapture.Capture
 )
+
+var errSessionCaptureTruncated = errors.New("session capture body was truncated")
 
 type sessionStoreCaptureState struct {
 	mu               sync.Mutex
@@ -52,9 +43,8 @@ type sessionStoreCaptureState struct {
 }
 
 type sessionStorePayload struct {
-	Endpoint              string
+	SessionID             string
 	TenantID              string
-	RequestID             string
 	StartedAt             time.Time
 	EndedAt               time.Time
 	UserID                int
@@ -63,11 +53,6 @@ type sessionStorePayload struct {
 	PromptTokens          int
 	CompletionTokens      int
 	Quota                 int
-	Method                string
-	Path                  string
-	RawQuery              string
-	RequestHeaders        http.Header
-	ResponseHeaders       http.Header
 	HTTPStatus            int
 	RequestBody           []byte
 	ResponseBody          []byte
@@ -75,17 +60,39 @@ type sessionStorePayload struct {
 	ResponseBodyTruncated bool
 }
 
-type sessionStoreTranscriptEvent struct {
-	Type          string              `json:"type"`
-	Timestamp     string              `json:"timestamp"`
-	RequestID     string              `json:"request_id"`
-	Method        string              `json:"method,omitempty"`
-	Path          string              `json:"path,omitempty"`
-	Query         map[string][]string `json:"query,omitempty"`
-	StatusCode    int                 `json:"status_code,omitempty"`
-	Headers       map[string][]string `json:"headers,omitempty"`
-	Body          any                 `json:"body,omitempty"`
-	BodyTruncated bool                `json:"body_truncated,omitempty"`
+type claudeSessionRecord struct {
+	SessionID          string            `json:"session_id"`
+	CapturedAt         string            `json:"captured_at"`
+	Provider           string            `json:"provider"`
+	Model              string            `json:"model"`
+	Request            json.RawMessage   `json:"request"`
+	Response           json.RawMessage   `json:"response"`
+	TokenLength        claudeTokenInfo   `json:"token_length"`
+	SignaturePreserved bool              `json:"signature_preserved"`
+	Meta               claudeSessionMeta `json:"meta"`
+}
+
+type claudeTokenInfo struct {
+	InputTokens   int64 `json:"input_tokens"`
+	OutputTokens  int64 `json:"output_tokens"`
+	TotalTokens   int64 `json:"total_tokens"`
+	CacheCreation int64 `json:"cache_creation"`
+	CacheRead     int64 `json:"cache_read"`
+}
+
+type claudeSessionMeta struct {
+	TenantID  string  `json:"tenant_id"`
+	CostUSD   float64 `json:"cost_usd"`
+	StartedAt string  `json:"started_at"`
+	EndedAt   string  `json:"ended_at"`
+	Turns     int     `json:"turns"`
+}
+
+type claudeRequestSummary struct {
+	Model    string `json:"model"`
+	Messages []struct {
+		Role string `json:"role"`
+	} `json:"messages"`
 }
 
 func sessionStoreEnvOrDefault(key string, fallback string) string {
@@ -95,35 +102,58 @@ func sessionStoreEnvOrDefault(key string, fallback string) string {
 	return fallback
 }
 
-func newSessionStoreHTTPClient() *http.Client {
-	return &http.Client{Timeout: sessionStoreUploadTimeout}
+func sessionStoreOptionalUserID(key string) *int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+	userID, err := strconv.Atoi(value)
+	if err != nil || userID <= 0 {
+		invalidUserID := 0
+		return &invalidUserID
+	}
+	return &userID
 }
 
-// SessionStoreCaptureEnabledForRequest limits transcript capture to text-model
-// endpoints. Binary/image/audio requests can exceed the sink's 10 MiB limit and
-// are not Claude-style session transcripts.
-func SessionStoreCaptureEnabledForRequest(method string, path string) bool {
-	if sessionStoreURL == "" || method != http.MethodPost {
+// SessionStoreCaptureEnabledForRequest keeps the response-copying middleware
+// off unless the new capture pipeline is enabled and the request is a native
+// Anthropic Messages request for a customer-selected Claude family.
+func SessionStoreCaptureEnabledForRequest(method string, path string, model string, userID int) bool {
+	if !sessionCaptureEnabled || method != http.MethodPost || path != "/v1/messages" || !isClaudeSessionCaptureModel(model) {
 		return false
 	}
-	switch path {
-	case "/v1/messages",
-		"/v1/completions",
-		"/v1/chat/completions",
-		"/v1/responses",
-		"/v1/responses/compact",
-		"/pg/chat/completions":
+	return sessionCaptureAllowedUser == nil || *sessionCaptureAllowedUser == userID
+}
+
+func isClaudeSessionCaptureModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if slash := strings.LastIndex(model, "/"); slash >= 0 {
+		model = model[slash+1:]
+	}
+	if strings.HasPrefix(model, "claude-sonnet-") {
 		return true
 	}
-	if !strings.HasPrefix(path, "/v1beta/models/") && !strings.HasPrefix(path, "/v1/models/") {
+	const opusPrefix = "claude-opus-"
+	if !strings.HasPrefix(model, opusPrefix) {
 		return false
 	}
-	actionIndex := strings.LastIndex(path, ":")
-	if actionIndex < 0 || actionIndex == len(path)-1 {
+	version := strings.ReplaceAll(strings.TrimPrefix(model, opusPrefix), ".", "-")
+	parts := strings.Split(version, "-")
+	if len(parts) == 0 {
 		return false
 	}
-	action := path[actionIndex+1:]
-	return action == "generateContent" || action == "streamGenerateContent"
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	if major > 4 {
+		return true
+	}
+	if major < 4 || len(parts) < 2 {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	return err == nil && minor >= 6
 }
 
 func BeginSessionStoreCapture(c *gin.Context) {
@@ -156,11 +186,11 @@ func recordSessionStoreUsage(c *gin.Context, userID int, model string, promptTok
 	state.mu.Unlock()
 }
 
-// FinishSessionStoreCapture snapshots the request after the relay handler has
-// completely finished. The external HTTP request is queued and never blocks the
-// user-facing relay response.
+// FinishSessionStoreCapture snapshots the complete request and client-visible
+// Claude response, builds the canonical JSONL record, then hands it to the
+// best-effort GCS/PubSub publisher. Storage failures never propagate upward.
 func FinishSessionStoreCapture(c *gin.Context, responseBody []byte, responseBodyTruncated bool) {
-	if c == nil || c.Request == nil || sessionStoreURL == "" {
+	if c == nil || c.Request == nil || !sessionCaptureEnabled {
 		return
 	}
 	state, ok := common.GetContextKeyType[*sessionStoreCaptureState](c, constant.ContextKeySessionStoreCapture)
@@ -170,56 +200,61 @@ func FinishSessionStoreCapture(c *gin.Context, responseBody []byte, responseBody
 
 	requestBody, requestBodyTruncated, err := readSessionStoreRequestBody(c)
 	if err != nil {
-		common.SysError("session store failed to snapshot request body: " + err.Error())
+		common.SysError("session capture failed to snapshot request body: " + err.Error())
 		return
 	}
 
 	state.mu.Lock()
-	startedAt := state.startedAt
-	userID := state.userID
-	model := state.model
-	promptTokens := state.promptTokens
-	completionTokens := state.completionTokens
-	quota := state.quota
-	state.mu.Unlock()
-
-	statusCode := c.Writer.Status()
-	if statusCode == 0 {
-		statusCode = http.StatusOK
-	}
-	status := "error"
-	if statusCode < http.StatusBadRequest {
-		status = "ok"
-	}
-	requestID := c.GetString(common.RequestIdKey)
-	if requestID == "" {
-		requestID = uuid.NewString()
-	}
-
 	payload := sessionStorePayload{
-		Endpoint:              sessionStoreURL,
-		TenantID:              sessionStoreTenantID,
-		RequestID:             requestID,
-		StartedAt:             startedAt,
+		SessionID:             c.GetString(common.RequestIdKey),
+		TenantID:              sessionCaptureTenantID,
+		StartedAt:             state.startedAt,
 		EndedAt:               time.Now(),
-		UserID:                userID,
-		Model:                 model,
-		Status:                status,
-		PromptTokens:          promptTokens,
-		CompletionTokens:      completionTokens,
-		Quota:                 quota,
-		Method:                c.Request.Method,
-		Path:                  c.Request.URL.Path,
-		RawQuery:              c.Request.URL.RawQuery,
-		RequestHeaders:        c.Request.Header.Clone(),
-		ResponseHeaders:       c.Writer.Header().Clone(),
-		HTTPStatus:            statusCode,
+		UserID:                state.userID,
+		Model:                 state.model,
+		PromptTokens:          state.promptTokens,
+		CompletionTokens:      state.completionTokens,
+		Quota:                 state.quota,
+		HTTPStatus:            c.Writer.Status(),
 		RequestBody:           requestBody,
 		ResponseBody:          append([]byte(nil), responseBody...),
 		RequestBodyTruncated:  requestBodyTruncated,
 		ResponseBodyTruncated: responseBodyTruncated,
 	}
-	sessionStoreAsyncRunner(payload)
+	state.mu.Unlock()
+
+	if payload.SessionID == "" {
+		payload.SessionID = uuid.NewString()
+	}
+	if payload.HTTPStatus == 0 {
+		payload.HTTPStatus = http.StatusOK
+	}
+	payload.Status = "error"
+	if payload.HTTPStatus < http.StatusBadRequest {
+		payload.Status = "ok"
+	}
+
+	transcript, complete, err := buildSessionStoreTranscript(payload)
+	if err != nil {
+		common.SysError("session capture failed to build transcript request_id=" + payload.SessionID + ": " + err.Error())
+		return
+	}
+	if payload.Status == "ok" && !complete {
+		payload.Status = "partial"
+	}
+
+	sessionCapturePublish(sessioncapture.Meta{
+		SessionID: payload.SessionID,
+		TenantID:  payload.TenantID,
+		UserID:    strconv.Itoa(payload.UserID),
+		Model:     payload.Model,
+		Status:    payload.Status,
+		StartedAt: payload.StartedAt,
+		EndedAt:   payload.EndedAt,
+		TokensIn:  int64(payload.PromptTokens),
+		TokensOut: int64(payload.CompletionTokens),
+		CostUSD:   sessionStoreCostUSD(payload.Quota),
+	}, transcript)
 }
 
 func readSessionStoreRequestBody(c *gin.Context) ([]byte, bool, error) {
@@ -245,215 +280,297 @@ func readSessionStoreRequestBody(c *gin.Context) ([]byte, bool, error) {
 	return data, truncated, nil
 }
 
-func enqueueSessionStorePayload(payload sessionStorePayload) {
-	sessionStoreWorkers.Do(startSessionStoreWorkers)
-	select {
-	case sessionStoreQueue <- payload:
-	default:
-		common.SysError("session store async queue full; dropping transcript request_id=" + payload.RequestID)
+func buildSessionStoreTranscript(payload sessionStorePayload) ([]byte, bool, error) {
+	if payload.RequestBodyTruncated || payload.ResponseBodyTruncated {
+		return nil, false, errSessionCaptureTruncated
 	}
-}
 
-func startSessionStoreWorkers() {
-	for i := 0; i < sessionStoreWorkerCount; i++ {
-		gopool.Go(func() {
-			for payload := range sessionStoreQueue {
-				deliverSessionStorePayload(payload)
-			}
-		})
+	var requestSummary claudeRequestSummary
+	if err := common.Unmarshal(payload.RequestBody, &requestSummary); err != nil {
+		return nil, false, fmt.Errorf("invalid Claude request JSON: %w", err)
 	}
-}
-
-func deliverSessionStorePayload(payload sessionStorePayload) {
-	ctx, cancel := context.WithTimeout(context.Background(), sessionStoreUploadTimeout)
-	defer cancel()
-	if err := uploadSessionStorePayload(ctx, payload); err != nil {
-		common.SysError(fmt.Sprintf("session store upload failed; dropping transcript request_id=%s: %v", payload.RequestID, err))
+	model := requestSummary.Model
+	if model == "" {
+		model = payload.Model
 	}
-}
 
-func uploadSessionStorePayload(ctx context.Context, payload sessionStorePayload) error {
-	transcript, err := buildSessionStoreTranscript(payload)
+	responseBody, response, complete, err := canonicalClaudeResponse(payload.ResponseBody)
 	if err != nil {
-		return err
+		return nil, false, err
 	}
+	usage := claudeUsageFromResponse(response)
+	if usage.InputTokens == 0 {
+		usage.InputTokens = int64(payload.PromptTokens)
+	}
+	if usage.OutputTokens == 0 {
+		usage.OutputTokens = int64(payload.CompletionTokens)
+	}
+	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	fields := map[string]string{
-		"session_id": sessionStoreSessionID(payload.TenantID, payload.RequestID),
-		"tenant_id":  payload.TenantID,
-		"started_at": payload.StartedAt.UTC().Format(time.RFC3339Nano),
-		"ended_at":   payload.EndedAt.UTC().Format(time.RFC3339Nano),
-		"user_id":    strconv.Itoa(payload.UserID),
-		"model":      payload.Model,
-		"status":     payload.Status,
-		"tokens_in":  strconv.Itoa(payload.PromptTokens),
-		"tokens_out": strconv.Itoa(payload.CompletionTokens),
-		"cost_usd":   sessionStoreCostUSD(payload.Quota),
-	}
-	for key, value := range fields {
-		if err := writer.WriteField(key, value); err != nil {
-			return err
+	turns := 0
+	for _, message := range requestSummary.Messages {
+		if message.Role == "user" {
+			turns++
 		}
 	}
-	partHeader := make(textproto.MIMEHeader)
-	partHeader.Set("Content-Disposition", `form-data; name="transcript"; filename="session.jsonl"`)
-	partHeader.Set("Content-Type", "application/x-ndjson")
-	part, err := writer.CreatePart(partHeader)
+	endedAt := payload.EndedAt
+	if endedAt.IsZero() {
+		endedAt = time.Now()
+	}
+	startedAt := payload.StartedAt
+	if startedAt.IsZero() {
+		startedAt = endedAt
+	}
+	record := claudeSessionRecord{
+		SessionID:          payload.SessionID,
+		CapturedAt:         endedAt.UTC().Format(time.RFC3339Nano),
+		Provider:           "anthropic",
+		Model:              model,
+		Request:            append(json.RawMessage(nil), payload.RequestBody...),
+		Response:           append(json.RawMessage(nil), responseBody...),
+		TokenLength:        usage,
+		SignaturePreserved: true,
+		Meta: claudeSessionMeta{
+			TenantID:  payload.TenantID,
+			CostUSD:   sessionStoreCostUSD(payload.Quota),
+			StartedAt: startedAt.UTC().Format(time.RFC3339Nano),
+			EndedAt:   endedAt.UTC().Format(time.RFC3339Nano),
+			Turns:     turns,
+		},
+	}
+	transcript, err := common.Marshal(record)
 	if err != nil {
-		return err
+		return nil, false, err
 	}
-	if _, err := part.Write(transcript); err != nil {
-		return err
-	}
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, payload.Endpoint, bytes.NewReader(body.Bytes()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	resp, err := sessionStoreHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	responsePreview, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(responsePreview)))
-	}
-	return nil
+	return append(transcript, '\n'), complete, nil
 }
 
-func buildSessionStoreTranscript(payload sessionStorePayload) ([]byte, error) {
-	requestBody := append([]byte(nil), payload.RequestBody...)
-	responseBody := append([]byte(nil), payload.ResponseBody...)
-	requestTruncated := payload.RequestBodyTruncated
-	responseTruncated := payload.ResponseBodyTruncated
-
-	for attempt := 0; attempt < 64; attempt++ {
-		requestEvent := sessionStoreTranscriptEvent{
-			Type:          "request",
-			Timestamp:     payload.StartedAt.UTC().Format(time.RFC3339Nano),
-			RequestID:     payload.RequestID,
-			Method:        payload.Method,
-			Path:          payload.Path,
-			Query:         redactSessionStoreQuery(payload.RawQuery),
-			Headers:       redactSessionStoreHeaders(payload.RequestHeaders),
-			Body:          sessionStoreTranscriptBody(requestBody, requestTruncated),
-			BodyTruncated: requestTruncated,
-		}
-		responseEvent := sessionStoreTranscriptEvent{
-			Type:          "response",
-			Timestamp:     payload.EndedAt.UTC().Format(time.RFC3339Nano),
-			RequestID:     payload.RequestID,
-			StatusCode:    payload.HTTPStatus,
-			Headers:       redactSessionStoreHeaders(payload.ResponseHeaders),
-			Body:          sessionStoreTranscriptBody(responseBody, responseTruncated),
-			BodyTruncated: responseTruncated,
-		}
-		requestLine, err := common.Marshal(requestEvent)
-		if err != nil {
-			return nil, err
-		}
-		responseLine, err := common.Marshal(responseEvent)
-		if err != nil {
-			return nil, err
-		}
-		transcript := make([]byte, 0, len(requestLine)+len(responseLine)+2)
-		transcript = append(transcript, requestLine...)
-		transcript = append(transcript, '\n')
-		transcript = append(transcript, responseLine...)
-		transcript = append(transcript, '\n')
-		if len(transcript) <= sessionStoreMaxTranscriptBytes {
-			return transcript, nil
-		}
-
-		overflow := len(transcript) - sessionStoreMaxTranscriptBytes
-		trimBytes := overflow + 64*1024
-		if len(responseBody) >= len(requestBody) && len(responseBody) > 0 {
-			if trimBytes >= len(responseBody) {
-				responseBody = nil
-			} else {
-				responseBody = responseBody[:len(responseBody)-trimBytes]
-			}
-			responseTruncated = true
-		} else if len(requestBody) > 0 {
-			if trimBytes >= len(requestBody) {
-				requestBody = nil
-			} else {
-				requestBody = requestBody[:len(requestBody)-trimBytes]
-			}
-			requestTruncated = true
-		} else {
-			return nil, fmt.Errorf("session store transcript metadata exceeds %d bytes", sessionStoreMaxTranscriptBytes)
-		}
+func canonicalClaudeResponse(body []byte) ([]byte, map[string]any, bool, error) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return nil, nil, false, errors.New("empty Claude response")
 	}
-	return nil, fmt.Errorf("unable to fit session store transcript within %d bytes", sessionStoreMaxTranscriptBytes)
+	if trimmed[0] == '{' {
+		var response map[string]any
+		if err := common.Unmarshal(trimmed, &response); err != nil {
+			return nil, nil, false, fmt.Errorf("invalid Claude response JSON: %w", err)
+		}
+		return append([]byte(nil), trimmed...), response, true, nil
+	}
+	response, complete, err := assembleClaudeStream(trimmed)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	data, err := common.Marshal(response)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return data, response, complete, nil
 }
 
-func sessionStoreTranscriptBody(body []byte, truncated bool) any {
-	if len(body) == 0 {
-		return nil
-	}
-	if !truncated && json.Valid(body) {
-		return json.RawMessage(body)
-	}
-	return string(body)
-}
+func assembleClaudeStream(body []byte) (map[string]any, bool, error) {
+	var message map[string]any
+	blocks := make(map[int]map[string]any)
+	partialJSON := make(map[int]string)
+	sawMessageStop := false
 
-func redactSessionStoreHeaders(headers http.Header) map[string][]string {
-	if len(headers) == 0 {
-		return nil
-	}
-	result := make(map[string][]string, len(headers))
-	for key, values := range headers {
-		if isSessionStoreSecretName(key) {
-			result[key] = []string{"[redacted]"}
+	for _, eventData := range sessionStoreSSEData(body) {
+		if eventData == "" || eventData == "[DONE]" {
 			continue
 		}
-		result[key] = append([]string(nil), values...)
+		var event map[string]any
+		if err := common.Unmarshal([]byte(eventData), &event); err != nil {
+			return nil, false, fmt.Errorf("invalid Claude SSE event: %w", err)
+		}
+		eventType, _ := event["type"].(string)
+		switch eventType {
+		case "message_start":
+			message, _ = event["message"].(map[string]any)
+			if message == nil {
+				return nil, false, errors.New("Claude message_start is missing message")
+			}
+		case "content_block_start":
+			index, err := sessionStoreEventIndex(event)
+			if err != nil {
+				return nil, false, err
+			}
+			block, _ := event["content_block"].(map[string]any)
+			if block == nil {
+				return nil, false, errors.New("Claude content_block_start is missing content_block")
+			}
+			blocks[index] = block
+		case "content_block_delta":
+			index, err := sessionStoreEventIndex(event)
+			if err != nil {
+				return nil, false, err
+			}
+			block := blocks[index]
+			if block == nil {
+				block = make(map[string]any)
+				blocks[index] = block
+			}
+			delta, _ := event["delta"].(map[string]any)
+			mergeClaudeContentDelta(block, delta, partialJSON, index)
+		case "content_block_stop":
+			index, err := sessionStoreEventIndex(event)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := finalizeClaudeToolInput(blocks[index], partialJSON[index]); err != nil {
+				return nil, false, err
+			}
+		case "message_delta":
+			if message == nil {
+				message = make(map[string]any)
+			}
+			if delta, ok := event["delta"].(map[string]any); ok {
+				for key, value := range delta {
+					message[key] = value
+				}
+			}
+			mergeClaudeUsage(message, event["usage"])
+		case "message_stop":
+			sawMessageStop = true
+		case "error":
+			return event, true, nil
+		}
 	}
+	if message == nil {
+		return nil, false, errors.New("Claude stream did not contain message_start")
+	}
+	indices := make([]int, 0, len(blocks))
+	for index := range blocks {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	content := make([]any, 0, len(indices))
+	for _, index := range indices {
+		if err := finalizeClaudeToolInput(blocks[index], partialJSON[index]); err != nil {
+			return nil, false, err
+		}
+		content = append(content, blocks[index])
+	}
+	message["content"] = content
+	return message, sawMessageStop, nil
+}
+
+func sessionStoreSSEData(body []byte) []string {
+	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
+	result := make([]string, 0)
+	dataLines := make([]string, 0, 1)
+	flush := func() {
+		if len(dataLines) > 0 {
+			result = append(result, strings.Join(dataLines, "\n"))
+			dataLines = dataLines[:0]
+		}
+	}
+	for _, line := range lines {
+		if line == "" {
+			flush()
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		}
+	}
+	flush()
 	return result
 }
 
-func redactSessionStoreQuery(rawQuery string) map[string][]string {
-	if rawQuery == "" {
+func sessionStoreEventIndex(event map[string]any) (int, error) {
+	switch value := event["index"].(type) {
+	case float64:
+		return int(value), nil
+	case int:
+		return value, nil
+	default:
+		return 0, errors.New("Claude content event is missing index")
+	}
+}
+
+func mergeClaudeContentDelta(block map[string]any, delta map[string]any, partialJSON map[int]string, index int) {
+	for key, value := range delta {
+		if key == "type" {
+			continue
+		}
+		if key == "partial_json" {
+			if chunk, ok := value.(string); ok {
+				partialJSON[index] += chunk
+			}
+			continue
+		}
+		if chunk, ok := value.(string); ok {
+			if existing, ok := block[key].(string); ok {
+				block[key] = existing + chunk
+			} else {
+				block[key] = chunk
+			}
+			continue
+		}
+		block[key] = value
+	}
+}
+
+func finalizeClaudeToolInput(block map[string]any, partialJSON string) error {
+	if block == nil || partialJSON == "" {
 		return nil
 	}
-	values, err := url.ParseQuery(rawQuery)
-	if err != nil {
-		return map[string][]string{"_raw": {"[invalid query]"}}
+	var input any
+	if err := common.UnmarshalJsonStr(partialJSON, &input); err != nil {
+		return fmt.Errorf("invalid Claude tool input delta: %w", err)
 	}
-	for key := range values {
-		if isSessionStoreSecretName(key) {
-			values[key] = []string{"[redacted]"}
+	block["input"] = input
+	return nil
+}
+
+func mergeClaudeUsage(message map[string]any, deltaUsage any) {
+	if deltaUsage == nil {
+		return
+	}
+	usage, _ := message["usage"].(map[string]any)
+	if usage == nil {
+		usage = make(map[string]any)
+		message["usage"] = usage
+	}
+	if delta, ok := deltaUsage.(map[string]any); ok {
+		for key, value := range delta {
+			usage[key] = value
 		}
 	}
-	return values
 }
 
-func isSessionStoreSecretName(name string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(name))
-	normalized = strings.ReplaceAll(normalized, "-", "_")
-	switch normalized {
-	case "authorization", "proxy_authorization", "cookie", "set_cookie", "x_api_key", "api_key", "apikey", "x_goog_api_key", "key", "access_token", "refresh_token", "id_token", "password", "secret":
-		return true
+func claudeUsageFromResponse(response map[string]any) claudeTokenInfo {
+	var result claudeTokenInfo
+	if response == nil {
+		return result
+	}
+	usage, _ := response["usage"].(map[string]any)
+	result.InputTokens = sessionStoreJSONInt64(usage["input_tokens"])
+	result.OutputTokens = sessionStoreJSONInt64(usage["output_tokens"])
+	result.CacheCreation = sessionStoreJSONInt64(usage["cache_creation_input_tokens"])
+	result.CacheRead = sessionStoreJSONInt64(usage["cache_read_input_tokens"])
+	return result
+}
+
+func sessionStoreJSONInt64(value any) int64 {
+	switch value := value.(type) {
+	case float64:
+		return int64(value)
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case json.Number:
+		parsed, _ := value.Int64()
+		return parsed
 	default:
-		return strings.HasSuffix(normalized, "_api_key") || strings.HasSuffix(normalized, "_token") || strings.HasSuffix(normalized, "_secret")
+		return 0
 	}
 }
 
-func sessionStoreSessionID(tenantID string, requestID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(tenantID+"\x00"+requestID)).String()
-}
-
-func sessionStoreCostUSD(quota int) string {
+func sessionStoreCostUSD(quota int) float64 {
 	if common.QuotaPerUnit <= 0 {
-		return "0"
+		return 0
 	}
-	return strconv.FormatFloat(float64(quota)/common.QuotaPerUnit, 'f', 8, 64)
+	return float64(quota) / common.QuotaPerUnit
 }

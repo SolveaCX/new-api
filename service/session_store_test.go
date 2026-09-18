@@ -1,8 +1,7 @@
 package service
 
 import (
-	"context"
-	"io"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,218 +10,221 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/service/sessioncapture"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSessionStoreCaptureEnabledForRequest(t *testing.T) {
-	originalURL := sessionStoreURL
-	sessionStoreURL = "http://session-store.test/v1/sessions"
-	t.Cleanup(func() { sessionStoreURL = originalURL })
+	originalEnabled := sessionCaptureEnabled
+	originalAllowedUser := sessionCaptureAllowedUser
+	sessionCaptureEnabled = true
+	sessionCaptureAllowedUser = nil
+	t.Cleanup(func() {
+		sessionCaptureEnabled = originalEnabled
+		sessionCaptureAllowedUser = originalAllowedUser
+	})
 
 	tests := []struct {
 		method string
 		path   string
+		model  string
 		want   bool
 	}{
-		{http.MethodPost, "/v1/messages", true},
-		{http.MethodPost, "/v1/chat/completions", true},
-		{http.MethodPost, "/v1/responses", true},
-		{http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", true},
-		{http.MethodPost, "/v1/models/gemini-2.5-pro:streamGenerateContent", true},
-		{http.MethodPost, "/v1beta/models/gemini-2.5-pro:embedContent", false},
-		{http.MethodPost, "/v1/images/generations", false},
-		{http.MethodGet, "/v1/messages", false},
+		{http.MethodPost, "/v1/messages", "claude-opus-4-6-20260115", true},
+		{http.MethodPost, "/v1/messages", "anthropic/claude-opus-4-8-max", true},
+		{http.MethodPost, "/v1/messages", "claude-opus-5-20260815", true},
+		{http.MethodPost, "/v1/messages", "claude-sonnet-3-5", true},
+		{http.MethodPost, "/v1/messages", "claude-opus-4-5", false},
+		{http.MethodPost, "/v1/messages", "claude-haiku-4-6", false},
+		{http.MethodPost, "/v1/chat/completions", "claude-sonnet-4-5", false},
+		{http.MethodGet, "/v1/messages", "claude-sonnet-4-5", false},
 	}
 	for _, test := range tests {
-		require.Equal(t, test.want, SessionStoreCaptureEnabledForRequest(test.method, test.path), test.method+" "+test.path)
+		require.Equal(t, test.want, SessionStoreCaptureEnabledForRequest(test.method, test.path, test.model, 42), test.method+" "+test.path+" "+test.model)
 	}
+
+	allowedUserID := 42
+	sessionCaptureAllowedUser = &allowedUserID
+	require.True(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", 42))
+	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", 41))
 }
 
-func TestFinishSessionStoreCaptureSnapshotsUsageAndBodies(t *testing.T) {
+func TestSessionStoreOptionalUserIDFailsClosed(t *testing.T) {
+	t.Setenv("SESSION_CAPTURE_USER_ID", "invalid")
+	userID := sessionStoreOptionalUserID("SESSION_CAPTURE_USER_ID")
+	require.NotNil(t, userID)
+	require.Zero(t, *userID)
+}
+
+func TestBuildSessionStoreTranscriptCanonicalNonStream(t *testing.T) {
+	payload := sessionStorePayload{
+		SessionID:        "session-non-stream",
+		TenantID:         "flatkey-test",
+		StartedAt:        time.Date(2026, 9, 18, 1, 2, 3, 0, time.UTC),
+		EndedAt:          time.Date(2026, 9, 18, 1, 2, 8, 0, time.UTC),
+		PromptTokens:     100,
+		CompletionTokens: 20,
+		Quota:            int(common.QuotaPerUnit),
+		RequestBody:      []byte(`{"model":"claude-opus-4-8-20260601","system":"keep me","messages":[{"role":"user","content":"first"},{"role":"assistant","content":"answer"},{"role":"user","content":"second"}]}`),
+		ResponseBody:     []byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-4-8-20260601","content":[{"type":"thinking","thinking":"reason","signature":"signature-verbatim"},{"type":"text","text":"done"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":101,"output_tokens":21,"cache_creation_input_tokens":9,"cache_read_input_tokens":7}}`),
+	}
+
+	transcript, complete, err := buildSessionStoreTranscript(payload)
+	require.NoError(t, err)
+	require.True(t, complete)
+	require.True(t, strings.HasSuffix(string(transcript), "\n"))
+	require.NotContains(t, strings.TrimSuffix(string(transcript), "\n"), "\n")
+
+	var record claudeSessionRecord
+	require.NoError(t, common.Unmarshal(transcript, &record))
+	require.Equal(t, "anthropic", record.Provider)
+	require.Equal(t, "claude-opus-4-8-20260601", record.Model)
+	require.True(t, record.SignaturePreserved)
+	require.EqualValues(t, 101, record.TokenLength.InputTokens)
+	require.EqualValues(t, 21, record.TokenLength.OutputTokens)
+	require.EqualValues(t, 122, record.TokenLength.TotalTokens)
+	require.EqualValues(t, 9, record.TokenLength.CacheCreation)
+	require.EqualValues(t, 7, record.TokenLength.CacheRead)
+	require.Equal(t, 2, record.Meta.Turns)
+	require.InDelta(t, 1, record.Meta.CostUSD, 0.0000001)
+
+	var response map[string]any
+	require.NoError(t, common.Unmarshal(record.Response, &response))
+	content := response["content"].([]any)
+	thinking := content[0].(map[string]any)
+	require.Equal(t, "signature-verbatim", thinking["signature"])
+}
+
+func TestBuildSessionStoreTranscriptAssemblesClaudeStream(t *testing.T) {
+	stream := strings.Join([]string{
+		`event: message_start`,
+		`data: {"type":"message_start","message":{"id":"msg_stream","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":12,"output_tokens":1,"cache_creation_input_tokens":4,"cache_read_input_tokens":3}}}`,
+		``,
+		`event: content_block_start`,
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reason "}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"continued"}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed-"}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"verbatim"}}`,
+		``,
+		`event: content_block_stop`,
+		`data: {"type":"content_block_stop","index":0}`,
+		``,
+		`event: content_block_start`,
+		`data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query\":"}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"hello\"}"}}`,
+		``,
+		`event: content_block_stop`,
+		`data: {"type":"content_block_stop","index":1}`,
+		``,
+		`event: message_delta`,
+		`data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":17}}`,
+		``,
+		`event: message_stop`,
+		`data: {"type":"message_stop"}`,
+		``,
+	}, "\n")
+	payload := sessionStorePayload{
+		SessionID:    "session-stream",
+		TenantID:     "flatkey-test",
+		RequestBody:  []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`),
+		ResponseBody: []byte(stream),
+	}
+
+	transcript, complete, err := buildSessionStoreTranscript(payload)
+	require.NoError(t, err)
+	require.True(t, complete)
+	var record claudeSessionRecord
+	require.NoError(t, common.Unmarshal(transcript, &record))
+	require.EqualValues(t, 12, record.TokenLength.InputTokens)
+	require.EqualValues(t, 17, record.TokenLength.OutputTokens)
+	require.EqualValues(t, 4, record.TokenLength.CacheCreation)
+	require.EqualValues(t, 3, record.TokenLength.CacheRead)
+
+	var response map[string]any
+	require.NoError(t, common.Unmarshal(record.Response, &response))
+	require.Equal(t, "tool_use", response["stop_reason"])
+	content := response["content"].([]any)
+	thinking := content[0].(map[string]any)
+	require.Equal(t, "reason continued", thinking["thinking"])
+	require.Equal(t, "signed-verbatim", thinking["signature"])
+	tool := content[1].(map[string]any)
+	require.Equal(t, "hello", tool["input"].(map[string]any)["query"])
+}
+
+func TestBuildSessionStoreTranscriptRejectsTruncation(t *testing.T) {
+	_, _, err := buildSessionStoreTranscript(sessionStorePayload{RequestBodyTruncated: true})
+	require.ErrorIs(t, err, errSessionCaptureTruncated)
+	_, _, err = buildSessionStoreTranscript(sessionStorePayload{ResponseBodyTruncated: true})
+	require.ErrorIs(t, err, errSessionCaptureTruncated)
+}
+
+func TestFinishSessionStoreCapturePublishesCanonicalRecord(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	originalURL := sessionStoreURL
-	originalTenant := sessionStoreTenantID
-	originalRunner := sessionStoreAsyncRunner
-	sessionStoreURL = "http://session-store.test/v1/sessions"
-	sessionStoreTenantID = "flatkey-test"
-	var captured sessionStorePayload
-	sessionStoreAsyncRunner = func(payload sessionStorePayload) { captured = payload }
+	originalEnabled := sessionCaptureEnabled
+	originalTenant := sessionCaptureTenantID
+	originalPublish := sessionCapturePublish
+	sessionCaptureEnabled = true
+	sessionCaptureTenantID = "flatkey-test"
+	var capturedMeta sessioncapture.Meta
+	var capturedTranscript []byte
+	sessionCapturePublish = func(meta sessioncapture.Meta, transcript []byte) {
+		capturedMeta = meta
+		capturedTranscript = append([]byte(nil), transcript...)
+	}
 	t.Cleanup(func() {
-		sessionStoreURL = originalURL
-		sessionStoreTenantID = originalTenant
-		sessionStoreAsyncRunner = originalRunner
+		sessionCaptureEnabled = originalEnabled
+		sessionCaptureTenantID = originalTenant
+		sessionCapturePublish = originalPublish
 	})
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages?key=client-secret&beta=true", strings.NewReader(`{"model":"claude-test","messages":[{"role":"user","content":"hello"}]}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Request.Header.Set("Authorization", "Bearer client-secret")
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`))
 	c.Set(common.RequestIdKey, "request-123")
 	common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Unix(1_700_000_000, 0))
 	common.SetContextKey(c, constant.ContextKeyUserId, 42)
-	common.SetContextKey(c, constant.ContextKeyOriginalModel, "claude-test")
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, "claude-sonnet-4-5")
 
 	BeginSessionStoreCapture(c)
-	recordSessionStoreUsage(c, 42, "claude-test", 120, 34, int(common.QuotaPerUnit))
+	recordSessionStoreUsage(c, 42, "claude-sonnet-4-5", 120, 34, int(common.QuotaPerUnit))
 	c.Status(http.StatusOK)
-	FinishSessionStoreCapture(c, []byte(`{"id":"msg_1","content":[{"type":"text","text":"world"}]}`), false)
+	FinishSessionStoreCapture(c, []byte(`{"id":"msg_1","type":"message","content":[],"usage":{"input_tokens":120,"output_tokens":34}}`), false)
 
-	require.Equal(t, "request-123", captured.RequestID)
-	require.Equal(t, "flatkey-test", captured.TenantID)
-	require.Equal(t, 42, captured.UserID)
-	require.Equal(t, "claude-test", captured.Model)
-	require.Equal(t, "ok", captured.Status)
-	require.Equal(t, 120, captured.PromptTokens)
-	require.Equal(t, 34, captured.CompletionTokens)
-	require.JSONEq(t, `{"model":"claude-test","messages":[{"role":"user","content":"hello"}]}`, string(captured.RequestBody))
-	require.JSONEq(t, `{"id":"msg_1","content":[{"type":"text","text":"world"}]}`, string(captured.ResponseBody))
+	require.Equal(t, "request-123", capturedMeta.SessionID)
+	require.Equal(t, "flatkey-test", capturedMeta.TenantID)
+	require.Equal(t, "42", capturedMeta.UserID)
+	require.Equal(t, "ok", capturedMeta.Status)
+	require.EqualValues(t, 120, capturedMeta.TokensIn)
+	require.EqualValues(t, 34, capturedMeta.TokensOut)
+	require.InDelta(t, 1, capturedMeta.CostUSD, 0.0000001)
+	require.NotEmpty(t, capturedTranscript)
+
+	var record claudeSessionRecord
+	require.NoError(t, common.Unmarshal(capturedTranscript, &record))
+	require.Equal(t, "request-123", record.SessionID)
 }
 
-func TestFinishSessionStoreCaptureKeepsSuccessfulZeroUsageSessionOK(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	originalURL := sessionStoreURL
-	originalRunner := sessionStoreAsyncRunner
-	sessionStoreURL = "http://session-store.test/v1/sessions"
-	var captured sessionStorePayload
-	sessionStoreAsyncRunner = func(payload sessionStorePayload) { captured = payload }
-	t.Cleanup(func() {
-		sessionStoreURL = originalURL
-		sessionStoreAsyncRunner = originalRunner
-	})
-
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-test","messages":[]}`))
-	BeginSessionStoreCapture(c)
-	c.Status(http.StatusOK)
-	FinishSessionStoreCapture(c, []byte(`{"content":[]}`), false)
-
-	require.Equal(t, "ok", captured.Status)
-	require.Zero(t, captured.PromptTokens)
-	require.Zero(t, captured.CompletionTokens)
-}
-
-func TestBuildSessionStoreTranscriptRedactsCredentials(t *testing.T) {
-	payload := sessionStorePayload{
-		RequestID:       "req-redact",
-		StartedAt:       time.Unix(1_700_000_000, 0),
-		EndedAt:         time.Unix(1_700_000_001, 0),
-		Method:          http.MethodPost,
-		Path:            "/v1/messages",
-		RawQuery:        "key=query-secret&beta=true",
-		RequestHeaders:  http.Header{"Authorization": []string{"Bearer header-secret"}, "Anthropic-Version": []string{"2023-06-01"}},
-		ResponseHeaders: http.Header{"Set-Cookie": []string{"session=secret"}, "Content-Type": []string{"text/event-stream"}},
-		HTTPStatus:      http.StatusOK,
-		RequestBody:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
-		ResponseBody:    []byte("event: message\ndata: {\"text\":\"world\"}\n\n"),
-	}
-
-	transcript, err := buildSessionStoreTranscript(payload)
-	require.NoError(t, err)
-	require.NotContains(t, string(transcript), "header-secret")
-	require.NotContains(t, string(transcript), "query-secret")
-	require.NotContains(t, string(transcript), "session=secret")
-	require.Contains(t, string(transcript), "[redacted]")
-	require.Contains(t, string(transcript), "hello")
-	require.Contains(t, string(transcript), "world")
-
-	lines := strings.Split(strings.TrimSpace(string(transcript)), "\n")
-	require.Len(t, lines, 2)
-	var requestEvent map[string]any
-	require.NoError(t, common.Unmarshal([]byte(lines[0]), &requestEvent))
-	require.Equal(t, "request", requestEvent["type"])
-	var responseEvent map[string]any
-	require.NoError(t, common.Unmarshal([]byte(lines[1]), &responseEvent))
-	require.Equal(t, "response", responseEvent["type"])
-}
-
-func TestUploadSessionStorePayloadMultipartContract(t *testing.T) {
-	requestReceived := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.NoError(t, r.ParseMultipartForm(12*1024*1024))
-		require.Equal(t, "flatkey-test", r.FormValue("tenant_id"))
-		require.Equal(t, "7", r.FormValue("user_id"))
-		require.Equal(t, "claude-test", r.FormValue("model"))
-		require.Equal(t, "ok", r.FormValue("status"))
-		require.Equal(t, "10", r.FormValue("tokens_in"))
-		require.Equal(t, "20", r.FormValue("tokens_out"))
-		require.NotEmpty(t, r.FormValue("session_id"))
-		file, _, err := r.FormFile("transcript")
-		require.NoError(t, err)
-		defer file.Close()
-		body, err := io.ReadAll(file)
-		require.NoError(t, err)
-		require.Contains(t, string(body), `"type":"request"`)
-		require.Contains(t, string(body), `"type":"response"`)
-		requestReceived <- struct{}{}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"session_id":"stored"}`))
-	}))
-	defer server.Close()
-
-	payload := sessionStorePayload{
-		Endpoint:         server.URL,
-		TenantID:         "flatkey-test",
-		RequestID:        "request-upload",
-		StartedAt:        time.Unix(1_700_000_000, 0),
-		EndedAt:          time.Unix(1_700_000_001, 0),
-		UserID:           7,
-		Model:            "claude-test",
-		Status:           "ok",
-		PromptTokens:     10,
-		CompletionTokens: 20,
-		Quota:            int(common.QuotaPerUnit),
-		Method:           http.MethodPost,
-		Path:             "/v1/messages",
-		HTTPStatus:       http.StatusOK,
-		RequestBody:      []byte(`{"messages":[]}`),
-		ResponseBody:     []byte(`{"content":[]}`),
-	}
-	require.NoError(t, uploadSessionStorePayload(context.Background(), payload))
-	select {
-	case <-requestReceived:
-	case <-time.After(time.Second):
-		t.Fatal("session store server did not receive multipart upload")
-	}
-}
-
-func TestDeliverSessionStorePayloadAttemptsOnce(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		statusCode int
-		err        error
-	}{
-		{name: "success", statusCode: http.StatusCreated},
-		{name: "server failure", statusCode: http.StatusServiceUnavailable},
-		{name: "network failure", err: io.ErrUnexpectedEOF},
-		{name: "timeout", err: context.DeadlineExceeded},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			originalClient := sessionStoreHTTPClient
-			t.Cleanup(func() { sessionStoreHTTPClient = originalClient })
-			attempts := 0
-			sessionStoreHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				attempts++
-				if test.err != nil {
-					return nil, test.err
-				}
-				return &http.Response{
-					StatusCode: test.statusCode,
-					Body:       io.NopCloser(strings.NewReader("session store response")),
-					Header:     make(http.Header),
-				}, nil
-			})}
-
-			deliverSessionStorePayload(sessionStorePayload{
-				Endpoint:  "http://session-store.test/v1/sessions",
-				TenantID:  "flatkey-test",
-				RequestID: "single-attempt-" + test.name,
-			})
-
-			require.Equal(t, 1, attempts, "session uploads must not retry after a failure")
-		})
-	}
+func TestCanonicalClaudeResponseRejectsMalformedToolDelta(t *testing.T) {
+	stream := []byte("data: {\"type\":\"message_start\",\"message\":{\"type\":\"message\"}}\n\n" +
+		"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"input\":{}}}\n\n" +
+		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\"}}\n\n" +
+		"data: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+	_, _, _, err := canonicalClaudeResponse(stream)
+	require.Error(t, err)
+	require.False(t, errors.Is(err, errSessionCaptureTruncated))
 }
