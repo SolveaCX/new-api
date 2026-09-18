@@ -4,8 +4,9 @@ import {
   buildLanguagePreferenceCookieWrites,
   getLanguageRedirectPath,
 } from "@/lib/language-routing";
-import { isLocale } from "@/lib/locales";
+import { isLocale, localizePath } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
+import { getSkagLandingLocales } from "@/lib/skag-landing";
 
 const WEBSITE_PUBLIC_PRICING_GROUP = "plg";
 const PERMANENT_LEGACY_PATHS = new Map([
@@ -13,6 +14,16 @@ const PERMANENT_LEGACY_PATHS = new Map([
   ["user-agreement", "terms"],
   ["careers.html", "careers"],
   ["legal-sla", "sla"],
+  // Historical URLs still crawled in the September 2026 coverage report.
+  // Keep this explicit: arbitrary .html paths must remain genuine 404s.
+  ["login.html", "login"],
+  ["models.html", "models"],
+  ["sla.html", "sla"],
+  ["legal-sla.html", "sla"],
+  ["docs.html", "docs"],
+  ["privacy.html", "privacy"],
+  ["refund-policy.html", "refund-policy"],
+  ["playground.html", "playground"],
 ]);
 const CANONICAL_MODEL_SLUG_OVERRIDES = new Map([
   ["minimax-h3", "minimax-h3"],
@@ -154,6 +165,17 @@ export function resolvePermanentSeoRedirectPath(pathname: string): string | null
   if (routeSegments.length === 1) {
     const destination = PERMANENT_LEGACY_PATHS.get(routeSegments[0]);
     if (destination) return `${localePrefix}/${destination}`;
+  }
+
+  const isModelFamilyAlias = routeSegments.length === 2 && routeSegments[0] === "models";
+  const familySlug = isModelFamilyAlias ? routeSegments[1] : routeSegments.length === 1 ? routeSegments[0] : null;
+  if (familySlug === "gpt-api" || familySlug === "claude-api") {
+    // These family pages moved out of /models and only have selected
+    // translations. Also repair the missing targets emitted by old redirects.
+    const requestedLocale = locale ?? "en";
+    const targetLocale = getSkagLandingLocales(familySlug).includes(requestedLocale) ? requestedLocale : "en";
+    const destination = localizePath(`/${familySlug}`, targetLocale);
+    if (isModelFamilyAlias || destination !== pathname.replace(/\/+$/, "")) return destination;
   }
 
   if (

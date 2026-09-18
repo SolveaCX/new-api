@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, type Locale, isLocale, localizePath } from "./locales";
+import { getSkagLandingLocales, SKAG_LANDING_SLUGS } from "./skag-landing";
 
 export const LANGUAGE_PREFERENCE_COOKIE = "fk_locale";
 
@@ -150,6 +151,10 @@ function isDefaultLocaleNavigation(refererPathname: string | null | undefined): 
 }
 
 function isLocaleEnabledForPath(pathname: string, locale: Locale): boolean {
+  // Use the page's own translation inventory so an English fallback redirect
+  // cannot be sent straight back to a missing localized landing page.
+  const landingSlug = SKAG_LANDING_SLUGS.find((slug) => pathname === `/${slug}`);
+  if (landingSlug) return getSkagLandingLocales(landingSlug).includes(locale);
   const allowedLocales = PATH_LOCALE_ALLOWLIST[pathname];
   return !allowedLocales || allowedLocales.includes(locale);
 }
