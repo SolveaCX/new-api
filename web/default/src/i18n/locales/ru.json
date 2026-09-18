@@ -7180,6 +7180,11 @@
     "supplier bids · live": "supplier bids · live",
     "{{count}} requests": "{{count}} requests",
     "matched": "matched",
-    "Featured": "Featured"
+    "Featured": "Featured",
+    "1-hour create cache ratio": "Коэффициент создания кэша на 1 час",
+    "Optional ratio applied to 1-hour cache creation. If omitted, the legacy 1.6x multiplier is used.": "Необязательный коэффициент создания кэша на 1 час; если не задан, используется прежний множитель 1,6.",
+    "1-hour cache write price": "Цена записи кэша на 1 час",
+    "Optional token price for creating cache entries with a 1-hour TTL. If omitted, the legacy 1.6x multiplier is used.": "Необязательная цена токена для кэша с TTL 1 час; если не задана, используется прежний множитель 1,6.",
+    "Cache write (1h)": "Запись кэша (1 ч)"
   }
 }

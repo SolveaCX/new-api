@@ -100,3 +100,31 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, billing_setting.BillingModeTieredExpr, info.TieredBillingSnapshot.BillingMode)
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
 }
+
+func TestModelPriceHelperUsesExplicitOneHourCacheRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ratio_setting.InitRatioSettings()
+	original := ratio_setting.CreateCacheRatio1h2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateCreateCacheRatio1hByJSONString(original))
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.6",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+
+	require.NoError(t, ratio_setting.UpdateCreateCacheRatio1hByJSONString(`{"gpt-5.6":4}`))
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.Equal(t, 1.25, priceData.CacheCreation5mRatio)
+	require.Equal(t, 4.0, priceData.CacheCreation1hRatio)
+
+	require.NoError(t, ratio_setting.UpdateCreateCacheRatio1hByJSONString(`{}`))
+	priceData, err = ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.Equal(t, 2.0, priceData.CacheCreation1hRatio)
+}

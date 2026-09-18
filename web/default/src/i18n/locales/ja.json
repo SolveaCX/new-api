@@ -7180,6 +7180,11 @@
     "supplier bids · live": "supplier bids · live",
     "{{count}} requests": "{{count}} requests",
     "matched": "matched",
-    "Featured": "Featured"
+    "Featured": "Featured",
+    "1-hour create cache ratio": "1時間キャッシュ作成倍率",
+    "Optional ratio applied to 1-hour cache creation. If omitted, the legacy 1.6x multiplier is used.": "1時間キャッシュ作成に適用する任意の倍率。未設定の場合は従来の1.6倍を使用します。",
+    "1-hour cache write price": "1時間キャッシュ書き込み価格",
+    "Optional token price for creating cache entries with a 1-hour TTL. If omitted, the legacy 1.6x multiplier is used.": "TTL 1時間のキャッシュ作成に適用する任意のトークン価格。未設定の場合は従来の1.6倍を使用します。",
+    "Cache write (1h)": "キャッシュ書き込み（1時間）"
   }
 }

@@ -26,6 +26,7 @@ export type ModelPricingSnapshotInput = {
   modelRatio: string
   cacheRatio: string
   createCacheRatio: string
+  createCacheRatio1h: string
   completionRatio: string
   imageRatio: string
   audioRatio: string
@@ -41,6 +42,7 @@ export type ModelPricingSnapshot = {
   ratio?: string
   cacheRatio?: string
   createCacheRatio?: string
+  createCacheRatio1h?: string
   completionRatio?: string
   imageRatio?: string
   audioRatio?: string
@@ -133,6 +135,7 @@ export const getPriceSummary = (
     row.completionRatio,
     row.cacheRatio,
     row.createCacheRatio,
+    row.createCacheRatio1h,
     row.imageRatio,
     row.audioRatio,
     row.audioCompletionRatio,
@@ -175,6 +178,8 @@ export const getPriceDetail = (
       `${t('Cache')} $${ratioToPrice(row.cacheRatio, inputPrice)}`,
     row.createCacheRatio &&
       `${t('Cache write')} $${ratioToPrice(row.createCacheRatio, inputPrice)}`,
+    row.createCacheRatio1h &&
+      `${t('Cache write (1h)')} $${ratioToPrice(row.createCacheRatio1h, inputPrice)}`,
   ]
     .filter(Boolean)
     .slice(0, 2)
@@ -187,6 +192,7 @@ export const buildModelSnapshots = ({
   modelRatio,
   cacheRatio,
   createCacheRatio,
+  createCacheRatio1h,
   completionRatio,
   imageRatio,
   audioRatio,
@@ -210,6 +216,10 @@ export const buildModelSnapshots = ({
   const createCacheMap = safeJsonParse<Record<string, number>>(
     createCacheRatio,
     { fallback: {}, context: 'create cache ratios' }
+  )
+  const createCache1hMap = safeJsonParse<Record<string, number>>(
+    createCacheRatio1h,
+    { fallback: {}, context: '1-hour create cache ratios' }
   )
   const completionMap = safeJsonParse<Record<string, number>>(completionRatio, {
     fallback: {},
@@ -247,6 +257,7 @@ export const buildModelSnapshots = ({
     ...Object.keys(ratioMap),
     ...Object.keys(cacheMap),
     ...Object.keys(createCacheMap),
+    ...Object.keys(createCache1hMap),
     ...Object.keys(completionMap),
     ...Object.keys(imageMap),
     ...Object.keys(audioMap),
@@ -261,6 +272,7 @@ export const buildModelSnapshots = ({
     const ratio = ratioMap[name]?.toString() || ''
     const cache = cacheMap[name]?.toString() || ''
     const createCache = createCacheMap[name]?.toString() || ''
+    const createCache1h = createCache1hMap[name]?.toString() || ''
     const completion = completionMap[name]?.toString() || ''
     const image = imageMap[name]?.toString() || ''
     const audio = audioMap[name]?.toString() || ''
@@ -280,6 +292,7 @@ export const buildModelSnapshots = ({
         ratio,
         cacheRatio: cache,
         createCacheRatio: createCache,
+        createCacheRatio1h: createCache1h,
         completionRatio: completion,
         imageRatio: image,
         audioRatio: audio,
@@ -300,6 +313,7 @@ export const buildModelSnapshots = ({
         ratio,
         cacheRatio: cache,
         createCacheRatio: createCache,
+        createCacheRatio1h: createCache1h,
         completionRatio: completion,
         imageRatio: image,
         audioRatio: audio,
@@ -314,6 +328,7 @@ export const buildModelSnapshots = ({
       ratio,
       cacheRatio: cache,
       createCacheRatio: createCache,
+      createCacheRatio1h: createCache1h,
       completionRatio: completion,
       imageRatio: image,
       audioRatio: audio,
@@ -325,6 +340,7 @@ export const buildModelSnapshots = ({
           completion !== '' ||
           cache !== '' ||
           createCache !== '' ||
+          createCache1h !== '' ||
           image !== '' ||
           audio !== '' ||
           audioCompletion !== ''),
@@ -339,6 +355,7 @@ export const getSnapshotSignature = (snapshot?: ModelPricingSnapshot) => {
     ratio: snapshot.ratio || '',
     cacheRatio: snapshot.cacheRatio || '',
     createCacheRatio: snapshot.createCacheRatio || '',
+    createCacheRatio1h: snapshot.createCacheRatio1h || '',
     completionRatio: snapshot.completionRatio || '',
     imageRatio: snapshot.imageRatio || '',
     audioRatio: snapshot.audioRatio || '',
