@@ -235,6 +235,8 @@ func testChannelWithOptions(channel *model.Channel, testUserID int, testModel st
 			relayFormat = types.RelayFormatOpenAIResponses
 		case constant.EndpointTypeOpenAIResponseCompact:
 			relayFormat = types.RelayFormatOpenAIResponsesCompaction
+		case constant.EndpointTypeOpenRouterDecisions:
+			relayFormat = types.RelayFormatOpenAI
 		case constant.EndpointTypeAnthropic:
 			relayFormat = types.RelayFormatClaude
 		case constant.EndpointTypeGemini:
@@ -945,6 +947,15 @@ func buildTestRequestWithOptions(model string, endpointType string, channel *mod
 			return &dto.OpenAIResponsesCompactionRequest{
 				Model: model,
 				Input: json.RawMessage(testResponsesInput),
+			}
+		case constant.EndpointTypeOpenRouterDecisions:
+			// OpenRouter Decisions is a native structured request, not chat
+			// completions. Keep the fixture small but schema-valid so the channel
+			// test exercises the dedicated upstream endpoint.
+			return &dto.GeneralOpenAIRequest{
+				Model:     model,
+				State:     json.RawMessage(`{"text":"channel test"}`),
+				Questions: json.RawMessage(`{"route":{"type":"choice","instructions":"Choose a route","criteria":{"ok":"ok"}}}`),
 			}
 		case constant.EndpointTypeAnthropic:
 			return &dto.ClaudeRequest{
