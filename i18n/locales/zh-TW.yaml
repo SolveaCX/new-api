@@ -105,7 +105,7 @@ user.email_verification_required_for_api: "您的帳號信箱尚未驗證。請�
 user.verification_code_error: "驗證碼錯誤或已過期"
 user.phone_verification_required: "管理員已開啟簡訊驗證，請輸入包含國家區號的手機號碼和驗證碼"
 notify.phone_verification_required_for_api: "請先綁定並驗證手機號碼後再使用 API。"
-notify.phone_verification_reminder_for_api: "【{{.SystemName}} 提示】您的帳號尚未綁定手機號碼，請登入控制台完成綁定：{{.Link}} 。本次請求未轉送給模型、不計費，請直接重新傳送。此提示每 24 小時最多出現一次。"
+notify.phone_verification_reminder_for_api: "【{{.SystemName}} 通知】您的帳號尚未綁定手機號碼。請於美國東部時間 2026年9月25日（週五）上午10:00（EDT, UTC-4）前登入控制台完成綁定：{{.Link}} 。若屆時未完成綁定，後續介面呼叫可能會失敗，由此給您帶來的不便，我們深表歉意。本次請求未轉送至模型，也未計費；請重新傳送即可。此通知每 24 小時最多出現一次。"
 user.phone_invalid: "請輸入包含國家區號的有效手機號碼"
 user.phone_already_registered: "此手機號碼已註冊"
 user.sms_verification_unavailable: "簡訊驗證服務暫時不可用，請稍後再試"
