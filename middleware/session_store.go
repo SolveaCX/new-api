@@ -53,7 +53,7 @@ func (w *sessionStoreResponseWriter) snapshot() ([]byte, bool) {
 	return append([]byte(nil), w.buffer.Bytes()...), w.truncated
 }
 
-// SessionStoreCapture captures eligible native Claude requests and their
+// SessionStoreCapture captures eligible Claude Messages/Chat Completions requests and their
 // client-visible streamed/non-streamed responses. Cloud storage work starts
 // only after the handler has finished.
 func SessionStoreCapture() gin.HandlerFunc {

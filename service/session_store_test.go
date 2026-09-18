@@ -37,7 +37,13 @@ func TestSessionStoreCaptureEnabledForRequest(t *testing.T) {
 		{http.MethodPost, "/v1/messages", "claude-sonnet-3-5", true},
 		{http.MethodPost, "/v1/messages", "claude-opus-4-5", false},
 		{http.MethodPost, "/v1/messages", "claude-haiku-4-6", false},
-		{http.MethodPost, "/v1/chat/completions", "claude-sonnet-4-5", false},
+		{http.MethodPost, "/v1/chat/completions", "claude-sonnet-4-5", true},
+		{http.MethodPost, "/v1/chat/completions", "anthropic/claude-opus-4.6", true},
+		{http.MethodPost, "/v1/chat/completions", "claude-opus-4-5", false},
+		{http.MethodPost, "/v1/chat/completions", "claude-haiku-4-6", false},
+		{http.MethodPost, "/v1/chat/completions", "gpt-4o", false},
+		{http.MethodGet, "/v1/chat/completions", "claude-sonnet-4-5", false},
+		{http.MethodPost, "/v1/responses", "claude-sonnet-4-5", false},
 		{http.MethodGet, "/v1/messages", "claude-sonnet-4-5", false},
 	}
 	for _, test := range tests {
@@ -46,6 +52,10 @@ func TestSessionStoreCaptureEnabledForRequest(t *testing.T) {
 
 	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", "default"))
 	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", ""))
+	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/chat/completions", "claude-sonnet-4-5", "default"))
+	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/chat/completions", "claude-sonnet-4-5", ""))
+	sessionCaptureEnabled = false
+	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/chat/completions", "claude-sonnet-4-5", "plg"))
 }
 
 func TestBuildSessionStoreTranscriptCanonicalNonStream(t *testing.T) {
