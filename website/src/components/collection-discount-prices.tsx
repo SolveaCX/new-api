@@ -27,10 +27,13 @@ export function CollectionDiscountPrices({ model, locale }: { model: PricingMode
     return [{ dimension, label: copy[index + 2], reference: formatResolvedModelDisplayPrice(reference), current: formatResolvedModelDisplayPrice(current) }];
   });
   if (!rows.length) return null;
-  return <dl className="mt-4 space-y-2 rounded-lg bg-[#F8F6FC] p-3 text-sm text-[#5F5A68]">
-    {rows.map((row) => <div key={row.dimension}>
-      <dt className="font-medium text-[#201D28]">{row.label}</dt>
-      <dd className="flex flex-wrap gap-x-4 gap-y-1"><span>{copy[0]}: {row.reference}</span><span>{copy[1]}: {row.current}</span></dd>
+  return <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+    {rows.map((row) => <div key={row.dimension} className="min-w-0 rounded-xl border border-[#EDE8F5] bg-[#FAF8FD] p-4 sm:p-5">
+      <dt className="mb-4 font-semibold text-[#201D28]">{row.label}</dt>
+      <dd className="space-y-3">
+        <div><span className="block text-xs leading-5 text-[#777180]">{copy[1]}</span><span className="mt-1 block break-words text-lg font-semibold tabular-nums tracking-tight text-[#6D28D9]">{row.current}</span></div>
+        <div className="border-t border-[#EDE8F5] pt-3"><span className="block text-xs leading-5 text-[#777180]">{copy[0]}</span><s className="mt-1 block text-sm tabular-nums text-[#777180]">{row.reference}</s></div>
+      </dd>
     </div>)}
   </dl>;
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CollectionDiscountPrices } from "@/components/collection-discount-prices";
 import { MODEL_COLLECTION_COPY } from "@/lib/model-collections-copy";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles, BadgePercent, Code2, Feather, ImageIcon, Clapperboard, AudioLines, ScanEye, Speech } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import { ModelLogo } from "@/components/pricing-model-browser";
 import {
@@ -17,7 +17,12 @@ import { type PricingModel, type PricingData } from "@/lib/pricing";
 import { buildCollectionDetailSchema, buildCollectionsIndexSchema, stringifyJsonLd } from "@/lib/schema";
 
 const shellClass = "fk-site-frame";
-const detailShellClass = "fk-site-frame max-w-[1160px]";
+const detailShellClass = "fk-site-frame";
+const collectionIcons = {
+  "discounted-models": BadgePercent, coding: Code2, "roleplay-creative-writing": Feather,
+  "image-generation": ImageIcon, "video-generation": Clapperboard, "audio-generation-models": AudioLines,
+  "vision-models": ScanEye, "text-to-speech-models": Speech,
+};
 
 
 const uiCopy = {
@@ -121,21 +126,21 @@ function formatContext(value: number | null | undefined): string | null {
 function CollectionCard(props: { collection: ModelCollectionDefinition; locale: Locale; index: number }) {
   const copy = getModelCollectionCopy(props.collection, props.locale);
   const ui = getUiCopy(props.locale);
+  const Icon = collectionIcons[props.collection.slug];
   return (
     <Link
       href={localizePath(`/collections/${props.collection.slug}`, props.locale)}
-      className="landing-animate-fade-up group flex min-h-[184px] flex-col rounded-lg border border-[#E8E5EF] bg-[#F8F8FA] p-5 opacity-0 transition duration-300 hover:-translate-y-0.5 hover:border-[#C9B8FF] hover:bg-white hover:shadow-[0_16px_32px_-26px_rgba(76,29,149,.42)] sm:p-6"
+      className="landing-animate-fade-up group flex h-full flex-col rounded-2xl border border-[#E8E5EF] bg-white p-6 opacity-0 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-[#C9B8FF] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7C3AED] sm:p-7"
       style={{ animationDelay: `${120 + props.index * 55}ms` }}
     >
-      <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#16151B] sm:text-xl">{copy.title}</h2>
-      <p className="mt-2 text-sm leading-6 text-[#65616F]">{copy.shortDescription}</p>
-      <span className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-semibold text-[#7C3AED]">{ui.browse}<ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
+      <div className="flex items-center gap-3"><span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#F4EFFF] text-[#7C3AED]"><Icon className="size-5" aria-hidden="true" /></span><h2 className="text-lg font-semibold tracking-[-0.02em] text-[#16151B] sm:text-xl">{copy.title}</h2></div>
+      <p className="mt-5 flex-1 text-[15px] leading-7 text-[#65616F]">{copy.shortDescription}</p>
+      <span className="mt-6 flex items-center justify-between gap-2 border-t border-[#F0EDF5] pt-4 text-sm font-semibold text-[#7C3AED]">{ui.browse}<ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
     </Link>
   );
 }
 
 export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingData }) {
-  const ui = getUiCopy(props.locale);
   const overview = MODEL_COLLECTION_COPY[props.locale].index;
   const orderedCollections = getAvailableModelCollections(props.pricing.models);
   const schema = buildCollectionsIndexSchema({
@@ -152,7 +157,7 @@ export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingD
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
       <main className="model-square-page relative overflow-x-hidden bg-[#FAFAFC]">
       <section className="py-10 sm:py-14">
-        <div className={`${shellClass} max-w-[1160px]`}>
+        <div className={shellClass}>
           <div className="max-w-5xl">
             <h1 className="landing-animate-fade-up text-3xl font-semibold tracking-[-0.035em] text-[#16151B] opacity-0 sm:text-4xl" style={{ animationDelay: "40ms" }}>{overview.slogan}</h1>
             <p className="landing-animate-fade-up mt-3 max-w-4xl text-base leading-7 text-[#5F5A68] opacity-0" style={{ animationDelay: "80ms" }}>{overview.intro}</p>
@@ -170,26 +175,26 @@ export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingD
 function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: string }; rank: number; usage?: number; locale: Locale; discountModel?: PricingModel }) {
   const ui = getUiCopy(props.locale);
   return (
-    <article className="-mx-3 flex min-h-[232px] flex-col rounded-xl border-t border-[#ECEAF1] px-3 py-6 transition duration-200 first:border-t-0 hover:bg-[#FBFAFE] sm:-mx-4 sm:px-4">
+    <article className="min-w-0 rounded-2xl border border-[#E8E5EF] bg-white p-5 shadow-sm sm:p-7">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-2 w-5 shrink-0 text-right text-xs font-semibold tabular-nums text-[#9B95A3]">{props.rank}.</span>
-          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#E7E4EC] bg-[#FBFAFC] text-[#5B21B6] shadow-[0_8px_18px_-14px_rgba(76,29,149,.5)]">
+          <span className="mt-3 shrink-0 text-xs font-medium tabular-nums text-[#9B95A3]">{props.rank}.</span>
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-[#E7E4EC] bg-[#FBFAFC] text-[#5B21B6] shadow-[0_8px_18px_-14px_rgba(76,29,149,.5)]">
             <ModelLogo iconKey={props.model.iconKey} fallback={props.model.name.charAt(0).toUpperCase()} size={22} />
           </span>
           <div className="min-w-0">
-          <Link href={localizePath(props.model.href, props.locale)} className="text-base font-semibold text-[#201D28] hover:text-[#6D28D9]">{props.model.name}</Link>
+          <Link href={localizePath(props.model.href, props.locale)} className="break-words text-lg font-semibold text-[#201D28] hover:text-[#6D28D9]">{props.model.name}</Link>
           <p className="mt-1 text-sm text-[#777180]">{props.model.vendor}</p>
           </div>
         </div>
         {props.usage != null ? <span className="text-sm font-medium text-[#777180]">{displayTokens(props.usage).toLocaleString()} {ui.usage}</span> : null}
       </div>
-      {props.model.description ? <p className="mt-4 line-clamp-4 min-h-24 text-sm leading-6 text-[#5F5A68]">{props.model.description}</p> : null}
+      {props.model.description ? <p className="mt-5 max-w-4xl text-sm leading-7 text-[#5F5A68]">{props.model.description}</p> : null}
       {props.discountModel ? <CollectionDiscountPrices model={props.discountModel} locale={props.locale} /> : null}
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[#F0EDF5] pt-4">
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#777180]">
           {formatContext(props.model.context) ? <span>{formatContext(props.model.context)} {ui.context}</span> : null}
-          {props.model.price ? <span>{props.model.price}</span> : null}
+          {props.model.price && !props.discountModel ? <span>{props.model.price}</span> : null}
         </div>
         <Link href={localizePath(props.model.href, props.locale)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#F2ECFF] px-2.5 py-1.5 text-xs font-semibold !text-[#6D28D9] transition hover:-translate-y-px hover:bg-[#E9D5FF] hover:!text-[#5B21B6] hover:shadow-[0_6px_12px_-8px_rgba(76,29,149,.65)]">{ui.details}<ArrowRight className="size-3.5" aria-hidden="true" /></Link>
       </div>
@@ -236,11 +241,11 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
   return (
     <SiteShell locale={props.locale} pathname={`/collections/${props.collection.slug}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
-      <main className="model-detail-page model-prototype relative overflow-x-hidden bg-white text-[#171a21]">
-      <section className="bg-white py-8 sm:py-10">
+      <main className="model-square-page relative overflow-x-hidden bg-[#FAFAFC] text-[#171a21]">
+      <section className="border-b border-[#EDEAF2] bg-white py-8 sm:py-12">
         <div className={detailShellClass}>
           <nav className="text-sm text-[#777180]"><Link href={localizePath("/collections", props.locale)} className="hover:text-[#6D28D9]">{ui.collections}</Link><span className="mx-2">/</span><span>{copy.title}</span></nav>
-          <div className="mt-4">
+          <div className="mt-5 max-w-4xl">
             <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[#16151B] sm:text-4xl">{copy.slogan}</h1>
             <p className="mt-5 text-base leading-7 text-[#5F5A68]">{copy.intro}</p>
             {cards.length > 0 ? <p className="mt-3 text-base leading-7 text-[#5F5A68]">{topModelsSummaryCopy[props.locale](topModelNames)}</p> : null}
@@ -251,11 +256,11 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         </div>
       </section>
 
-      <section className="bg-white pb-12 sm:pb-16">
+      <section className="py-8 sm:py-10">
         <div className={detailShellClass}>
           <div>
-              <div className="mb-2 flex items-center gap-3"><Sparkles className="size-5 text-[#7C3AED]" /><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{rankingHeading}</h2></div>
-              <div>
+              <div className="mb-5 flex items-center gap-3"><Sparkles className="size-5 text-[#7C3AED]" /><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{rankingHeading}</h2></div>
+              <div className="space-y-5">
                 {cards.length ? cards.map((model, index) => <ModelRow key={model.href} model={model} rank={index + 1} locale={props.locale} usage={usageByName.get(model.rawName)} discountModel={props.collection.slug === "discounted-models" ? models[index] : undefined} />) : <p className="text-sm text-[#777180]">{copy.empty}</p>}
               </div>
           </div>
