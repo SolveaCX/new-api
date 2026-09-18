@@ -110,6 +110,25 @@ describe("website proxy language redirects", () => {
     expect(response?.headers.get("location")).toBe("https://flatkey.ai/zh/privacy?source=gsc");
   });
 
+  test("redirects historical HTML pages only when a canonical page exists", async () => {
+    const aliases = [
+      ["/index.html", "/"],
+      ["/zh/index.html", "/zh"],
+      ["/pricing.html", "/pricing"],
+      ["/ja/terms.html", "/ja/terms"],
+      ["/contact.html", "/contact"],
+      ["/usecases.html", "/usecases"],
+      ["/status.html", "/status"],
+    ];
+    for (const [from, to] of aliases) {
+      const response = await proxy(request(`${from}?source=legacy`));
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(`https://flatkey.ai${to}?source=legacy`);
+    }
+    expect(resolvePermanentSeoRedirectPath("/compute.html")).toBeNull();
+    expect(resolvePermanentSeoRedirectPath("/admin.html")).toBeNull();
+  });
+
   test("permanently redirects a model casing alias", async () => {
     const response = await proxy(request("/id/models/MiniMax-H3"));
 

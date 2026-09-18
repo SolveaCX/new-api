@@ -16,6 +16,12 @@ const PERMANENT_LEGACY_PATHS = new Map([
   ["legal-sla", "sla"],
   // Historical URLs still crawled in the September 2026 coverage report.
   // Keep this explicit: arbitrary .html paths must remain genuine 404s.
+  ["index.html", ""],
+  ["pricing.html", "pricing"],
+  ["terms.html", "terms"],
+  ["contact.html", "contact"],
+  ["usecases.html", "usecases"],
+  ["status.html", "status"],
   ["login.html", "login"],
   ["models.html", "models"],
   ["sla.html", "sla"],
@@ -164,7 +170,7 @@ export function resolvePermanentSeoRedirectPath(pathname: string): string | null
 
   if (routeSegments.length === 1) {
     const destination = PERMANENT_LEGACY_PATHS.get(routeSegments[0]);
-    if (destination) return `${localePrefix}/${destination}`;
+    if (destination !== undefined) return destination ? `${localePrefix}/${destination}` : localePrefix || "/";
   }
 
   // The old locale-suffixed category slug still appears in Search Console.
