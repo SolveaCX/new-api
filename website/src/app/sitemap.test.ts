@@ -37,6 +37,15 @@ describe("sitemap", () => {
                     model_ratio: 1,
                     completion_ratio: 1,
                   },
+                  {
+                    model_name: "openai/gpt-image-2.5-flare",
+                    vendor_name: "OpenAI",
+                    quota_type: 1,
+                    model_ratio: 0,
+                    model_price: 0.05,
+                    completion_ratio: 0,
+                    supported_endpoint_types: ["image-generation"],
+                  },
                 ],
                 vendors: [],
               }),
@@ -61,6 +70,9 @@ describe("sitemap", () => {
       expect(urls).not.toContain("https://flatkey.ai/models/MiniMax-H3");
       expect(urls).toContain("https://flatkey.ai/models/seedance-2.5");
       expect(urls).not.toContain("https://flatkey.ai/models/seedance-2-5");
+      expect(urls).toContain("https://flatkey.ai/models/openai~2Fgpt-image-2.5-flare");
+      expect(urls).toContain("https://flatkey.ai/ja/models/openai~2Fgpt-image-2.5-flare");
+      expect(urls).not.toContain("https://flatkey.ai/models/openai%2Fgpt-image-2.5-flare");
       expect(urls).toContain("https://flatkey.ai/models/minimax-h3/prompts/micro-drama-comic");
       expect(urls).toContain("https://flatkey.ai/models/gpt-image-2/prompts/product-hero");
       expect(urls).not.toContain("https://flatkey.ai/models/seedance-api/prompts/micro-drama-comic");

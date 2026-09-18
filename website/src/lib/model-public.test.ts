@@ -5,6 +5,7 @@ import {
   classifyModelHealthStatus,
   classifyPublicModel,
   modelPublicPath,
+  modelPublicSlug,
   normalizeModelKey,
   resolvePublicModel,
 } from "./model-public";
@@ -54,10 +55,24 @@ describe("model slug resolution", () => {
 
   test("model page paths encode the model name", () => {
     expect(modelPublicPath("claude-sonnet-4.5")).toBe("/models/claude-sonnet-4.5");
-    expect(modelPublicPath("a/b")).toBe("/models/a%2Fb");
+    expect(modelPublicPath("a/b")).toBe("/models/a~2Fb");
+    expect(modelPublicSlug("a~2Fb")).toBe("a~7E2Fb");
     expect(modelPublicPath("MiniMax-H3")).toBe("/models/minimax-h3");
     expect(modelPublicPath("minimax-h3")).toBe("/models/minimax-h3");
     expect(modelPublicPath("MiniMax-H3-Pro")).toBe("/models/MiniMax-H3-Pro");
+  });
+
+  test("resolves distinct slash-containing catalog IDs from safe public slugs", () => {
+    const vendorModels = [
+      model({ model_name: "openai/gpt-image-2.5-flare" }),
+      model({ model_name: "typesafe/gpt-image-2.5-flare" }),
+    ];
+    expect(resolvePublicModel(vendorModels, "openai~2Fgpt-image-2.5-flare")?.model_name).toBe(
+      "openai/gpt-image-2.5-flare"
+    );
+    expect(resolvePublicModel(vendorModels, "typesafe~2Fgpt-image-2.5-flare")?.model_name).toBe(
+      "typesafe/gpt-image-2.5-flare"
+    );
   });
 });
 
