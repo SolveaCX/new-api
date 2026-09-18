@@ -7104,16 +7104,14 @@ html:has(.model-prototype) {
   pointer-events: none;
 }
 
-.model-prototype .prompt-library .prompt-card-summary {
-  display: -webkit-box;
-  min-height: calc(1.6em * 4);
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.model-prototype .prompt-library .prompt-card-full {
+  flex: 1 1 auto;
   margin: 0;
   color: #475569;
   font-size: 13px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .model-prototype .prompt-library .prompt-card-linked .prompt-actions {
@@ -8241,10 +8239,10 @@ html:has(.model-prototype) {
   background: #b8a0d5;
   content: "";
 }
-.model-prototype .prompt-library .prompt-grid { align-items: start; }
+.model-prototype .prompt-library .prompt-grid { align-items: stretch; }
 .model-prototype .prompt-library .prompt-card {
-  height: auto !important;
-  align-self: start;
+  height: 100% !important;
+  align-self: stretch;
 }
 
 .prompt-related-cta {

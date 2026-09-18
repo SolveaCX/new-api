@@ -28,7 +28,7 @@ import {
 import Image from "next/image";
 import { getShowcaseGeneratorLabel } from "@/lib/showcase-generation";
 import { MediaPromptDisplay } from "@/components/media-prompt-display";
-import { getPromptDetailCopy, promptDetailPath, promptExcerpt } from "@/lib/prompt-detail";
+import { getPromptDetailCopy, promptDetailPath } from "@/lib/prompt-detail";
 import { optimizedPreviewSrc } from "@/lib/optimized-preview";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
@@ -3298,7 +3298,7 @@ function PromptLibrarySection(props: {
                   <p className="mb-3 text-xs font-medium text-[#74717d]">{props.t("Generated with {{model}}", { model: generatorLabel })}</p>
                 ) : null}
                 {detailHref ? (
-                  <p className="prompt-card-summary" lang="en">{promptExcerpt(item.prompt)}</p>
+                  <p className="prompt-card-full" lang="en">{item.prompt}</p>
                 ) : (
                   <MediaPromptDisplay prompt={item.prompt} locale={props.locale} />
                 )}
