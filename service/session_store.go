@@ -54,6 +54,7 @@ type sessionStorePayload struct {
 	CompletionTokens      int
 	Quota                 int
 	HTTPStatus            int
+	RequestPath           string
 	RequestBody           []byte
 	ResponseBody          []byte
 	RequestBodyTruncated  bool
@@ -103,10 +104,11 @@ func sessionStoreEnvOrDefault(key string, fallback string) string {
 }
 
 // SessionStoreCaptureEnabledForRequest keeps the response-copying middleware
-// off unless the new capture pipeline is enabled and the request is a native
-// Anthropic Messages request for a customer-selected Claude family.
+// off unless the capture pipeline is enabled and the request uses Messages
+// or Chat Completions for a customer-selected Claude family.
 func SessionStoreCaptureEnabledForRequest(method string, path string, model string, userGroup string) bool {
-	if !sessionCaptureEnabled || method != http.MethodPost || path != "/v1/messages" || !isClaudeSessionCaptureModel(model) {
+	if !sessionCaptureEnabled || method != http.MethodPost ||
+		(path != "/v1/messages" && path != "/v1/chat/completions") || !isClaudeSessionCaptureModel(model) {
 		return false
 	}
 	return strings.TrimSpace(userGroup) == sessionCaptureAllowedGroup
@@ -203,6 +205,7 @@ func FinishSessionStoreCapture(c *gin.Context, responseBody []byte, responseBody
 		CompletionTokens:      state.completionTokens,
 		Quota:                 state.quota,
 		HTTPStatus:            c.Writer.Status(),
+		RequestPath:           c.Request.URL.Path,
 		RequestBody:           requestBody,
 		ResponseBody:          append([]byte(nil), responseBody...),
 		RequestBodyTruncated:  requestBodyTruncated,
@@ -281,11 +284,23 @@ func buildSessionStoreTranscript(payload sessionStorePayload) ([]byte, bool, err
 		model = payload.Model
 	}
 
-	responseBody, response, complete, err := canonicalClaudeResponse(payload.ResponseBody)
+	canonicalResponse := canonicalClaudeResponse
+	isChatCompletion := payload.RequestPath == "/v1/chat/completions"
+	if isChatCompletion {
+		canonicalResponse = canonicalChatCompletionResponse
+	}
+	responseBody, response, complete, err := canonicalResponse(payload.ResponseBody)
 	if err != nil {
 		return nil, false, err
 	}
 	usage := claudeUsageFromResponse(response)
+	if isChatCompletion {
+		responseUsage, _ := response["usage"].(map[string]any)
+		usage.InputTokens = sessionStoreJSONInt64(responseUsage["prompt_tokens"])
+		usage.OutputTokens = sessionStoreJSONInt64(responseUsage["completion_tokens"])
+		details, _ := responseUsage["prompt_tokens_details"].(map[string]any)
+		usage.CacheRead = sessionStoreJSONInt64(details["cached_tokens"])
+	}
 	if usage.InputTokens == 0 {
 		usage.InputTokens = int64(payload.PromptTokens)
 	}
@@ -316,7 +331,7 @@ func buildSessionStoreTranscript(payload sessionStorePayload) ([]byte, bool, err
 		Request:            append(json.RawMessage(nil), payload.RequestBody...),
 		Response:           append(json.RawMessage(nil), responseBody...),
 		TokenLength:        usage,
-		SignaturePreserved: true,
+		SignaturePreserved: !isChatCompletion,
 		Meta: claudeSessionMeta{
 			TenantID:  payload.TenantID,
 			CostUSD:   sessionStoreCostUSD(payload.Quota),
