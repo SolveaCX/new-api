@@ -167,6 +167,16 @@ export function resolvePermanentSeoRedirectPath(pathname: string): string | null
     if (destination) return `${localePrefix}/${destination}`;
   }
 
+  // The old locale-suffixed category slug still appears in Search Console.
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] === "blog" &&
+    routeSegments[1] === "category" &&
+    routeSegments[2] === "cost-billing-ops-ja"
+  ) {
+    return `${localePrefix}/blog/category/cost-billing-and-ops`;
+  }
+
   const isModelFamilyAlias = routeSegments.length === 2 && routeSegments[0] === "models";
   const familySlug = isModelFamilyAlias ? routeSegments[1] : routeSegments.length === 1 ? routeSegments[0] : null;
   if (familySlug === "gpt-api" || familySlug === "claude-api") {

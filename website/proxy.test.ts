@@ -335,4 +335,15 @@ describe("Search Console historical URL recovery", () => {
       expect(response.headers.get("location")).toBeNull();
     }
   });
+
+  test("redirects the old billing blog category to its live slug, retaining locale and pagination", async () => {
+    const response = await proxy(request("/ja/blog/category/cost-billing-ops-ja?page=2"));
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://flatkey.ai/ja/blog/category/cost-billing-and-ops?page=2"
+    );
+    const french = await proxy(request("/fr/blog/category/cost-billing-ops-ja"));
+    expect(french.status).toBe(301);
+    expect(french.headers.get("location")).toBe("https://flatkey.ai/fr/blog/category/cost-billing-and-ops");
+  });
 });
