@@ -162,6 +162,71 @@ var gptImagePrices = map[string]map[string]float64{
 	},
 }
 
+// Grok Imagine image generation prices are charged per image. The model price
+// configured in Flatkey is the lowest official tier; request-level multipliers
+// select the higher resolution/quality tiers.
+var grokImagePrices = map[string]map[string]map[string]float64{
+	"grok-imagine-image": {
+		"default": {
+			"1024x1024": 0.02,
+			"2048x2048": 0.02,
+		},
+	},
+	"grok-imagine-image-2.0": {
+		"low": {
+			"1024x1024": 0.04,
+			"2048x2048": 0.06,
+		},
+		"medium": {
+			"1024x1024": 0.06,
+			"2048x2048": 0.08,
+		},
+	},
+	"grok-imagine-image-pro": {
+		"default": {
+			"1024x1024": 0.05,
+			"2048x2048": 0.07,
+		},
+	},
+	"grok-imagine-image-quality": {
+		"default": {
+			"1024x1024": 0.05,
+			"2048x2048": 0.07,
+		},
+	},
+}
+
+var grokImageLowestPrices = map[string]float64{
+	"grok-imagine-image":         0.02,
+	"grok-imagine-image-2.0":     0.04,
+	"grok-imagine-image-pro":     0.05,
+	"grok-imagine-image-quality": 0.05,
+}
+
+func grokImagePriceRatio(model, quality, size string) float64 {
+	modelPrices, ok := grokImagePrices[model]
+	if !ok {
+		return 1
+	}
+	quality = strings.ToLower(strings.TrimSpace(quality))
+	size = strings.ToLower(strings.TrimSpace(size))
+	if size == "" || size == "auto" {
+		size = "1024x1024"
+	}
+	if quality == "" || quality == "auto" {
+		quality = "default"
+	}
+	qualityPrices, ok := modelPrices[quality]
+	if !ok {
+		qualityPrices = modelPrices["default"]
+	}
+	price, ok := qualityPrices[size]
+	if !ok {
+		return 1
+	}
+	return price / grokImageLowestPrices[model]
+}
+
 func gptImagePriceRatio(quality, size string) float64 {
 	quality = strings.ToLower(strings.TrimSpace(quality))
 	size = strings.ToLower(strings.TrimSpace(size))
@@ -185,6 +250,8 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 
 	if strings.HasPrefix(i.Model, "gpt-image-") {
 		sizeRatio = gptImagePriceRatio(i.Quality, i.Size)
+	} else if strings.HasPrefix(i.Model, "grok-imagine-image") {
+		sizeRatio = grokImagePriceRatio(i.Model, i.Quality, i.Size)
 	} else if strings.HasPrefix(i.Model, "dall-e") {
 		// Size
 		if i.Size == "256x256" {
