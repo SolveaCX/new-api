@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"sync"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -51,12 +53,14 @@ func (w *sessionStoreResponseWriter) snapshot() ([]byte, bool) {
 	return append([]byte(nil), w.buffer.Bytes()...), w.truncated
 }
 
-// SessionStoreCapture captures the client-visible request and the complete
-// streamed/non-streamed response. Uploading starts only after the handler has
-// finished and happens on the session-store worker pool.
+// SessionStoreCapture captures eligible native Claude requests and their
+// client-visible streamed/non-streamed responses. Cloud storage work starts
+// only after the handler has finished.
 func SessionStoreCapture() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request == nil || !service.SessionStoreCaptureEnabledForRequest(c.Request.Method, c.Request.URL.Path) {
+		model := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+		userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+		if c.Request == nil || !service.SessionStoreCaptureEnabledForRequest(c.Request.Method, c.Request.URL.Path, model, userID) {
 			c.Next()
 			return
 		}

@@ -44,8 +44,11 @@ env:
   VIDEO_RESULT_SIGNED_URL_TTL_SECONDS: '900'
   VIDEO_RESULT_FETCH_TIMEOUT_SECONDS: '1800'
   VIDEO_RESULT_MAX_BYTES: '524288000'
-  SESSION_STORE_URL: http://100.81.41.30:8090/v1/sessions
-  SESSION_STORE_TENANT_ID: flatkey
+  SESSION_CAPTURE_ENABLED: 'true'
+  GCP_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+  PUBSUB_TOPIC: flatkey-sessions
+  GCS_STAGING: flatkey-session-staging-vocai-prod
+  SESSION_CAPTURE_USER_ID: '8309'
 
 jobs:
   build:
@@ -220,12 +223,15 @@ jobs:
             ASSET_MODEL_COVERAGE_STRICT_ENABLED ASSET_STORAGE_BUCKET \
             VIDEO_RESULT_STORAGE_BUCKET VIDEO_RESULT_RETENTION_SECONDS VIDEO_RESULT_SIGNED_URL_TTL_SECONDS \
             VIDEO_RESULT_FETCH_TIMEOUT_SECONDS VIDEO_RESULT_MAX_BYTES NODE_TYPE APP_ROLE TOKEN_BATCH_GROUP_ENABLED \
-            TEMP_MEDIA_BUCKET BYTEPLUS_REAL_PERSON_CALLBACK_BASE_URL \n            SMS_VERIFICATION_ENABLED SMS_VERIFICATION_VALID_MINUTES TELESIGN_ORIGINATOR ITNIO_SENDER_ID SESSION_STORE_URL SESSION_STORE_TENANT_ID; do
+            TEMP_MEDIA_BUCKET BYTEPLUS_REAL_PERSON_CALLBACK_BASE_URL \
+            SMS_VERIFICATION_ENABLED SMS_VERIFICATION_VALID_MINUTES TELESIGN_ORIGINATOR ITNIO_SENDER_ID \
+            SESSION_CAPTURE_ENABLED GCP_PROJECT PUBSUB_TOPIC GCS_STAGING; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
               env_vars+=("${name}=${value}")
             fi
           done
+          env_vars+=("SESSION_CAPTURE_USER_ID=${SESSION_CAPTURE_USER_ID:-}")
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,
@@ -251,7 +257,7 @@ jobs:
             "${container_args[@]}" \
             --image="${{ needs.build.outputs.image_uri }}" \
             --update-secrets="BYTEPLUS_REAL_PERSON_CIPHER_KEY=${BYTEPLUS_REAL_PERSON_CIPHER_SECRET}:latest,GROK_CREDENTIAL_CIPHER_KEY=${GROK_CREDENTIAL_CIPHER_SECRET}:latest" \
-            --remove-env-vars="PROMOTION_FREE_MODELS" \
+            --remove-env-vars="PROMOTION_FREE_MODELS,SESSION_STORE_URL,SESSION_STORE_TENANT_ID" \
             "${env_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
@@ -410,12 +416,15 @@ jobs:
             ASSET_MODEL_COVERAGE_STRICT_ENABLED ASSET_STORAGE_BUCKET \
             VIDEO_RESULT_STORAGE_BUCKET VIDEO_RESULT_RETENTION_SECONDS VIDEO_RESULT_SIGNED_URL_TTL_SECONDS \
             VIDEO_RESULT_FETCH_TIMEOUT_SECONDS VIDEO_RESULT_MAX_BYTES NODE_TYPE APP_ROLE TEMP_MEDIA_BUCKET \
-            BYTEPLUS_REAL_PERSON_CALLBACK_BASE_URL \n            SMS_VERIFICATION_ENABLED SMS_VERIFICATION_VALID_MINUTES TELESIGN_ORIGINATOR ITNIO_SENDER_ID SESSION_STORE_URL SESSION_STORE_TENANT_ID; do
+            BYTEPLUS_REAL_PERSON_CALLBACK_BASE_URL \
+            SMS_VERIFICATION_ENABLED SMS_VERIFICATION_VALID_MINUTES TELESIGN_ORIGINATOR ITNIO_SENDER_ID \
+            SESSION_CAPTURE_ENABLED GCP_PROJECT PUBSUB_TOPIC GCS_STAGING; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
               env_vars+=("${name}=${value}")
             fi
           done
+          env_vars+=("SESSION_CAPTURE_USER_ID=${SESSION_CAPTURE_USER_ID:-}")
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,
@@ -442,7 +451,7 @@ jobs:
             "${container_args[@]}" \
             --image="${{ needs.build.outputs.image_uri }}" \
             --update-secrets="BYTEPLUS_REAL_PERSON_CIPHER_KEY=${BYTEPLUS_REAL_PERSON_CIPHER_SECRET}:latest" \
-            --remove-env-vars="PROMOTION_FREE_MODELS" \
+            --remove-env-vars="PROMOTION_FREE_MODELS,SESSION_STORE_URL,SESSION_STORE_TENANT_ID" \
             "${env_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
