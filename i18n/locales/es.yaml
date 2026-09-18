@@ -22,7 +22,7 @@ notify.quota_warning_email: "{{.Warning}}. Su cuota restante actual es {{.Quota}
 notify.quota_warning_bark: "{{.Warning}}. Cuota restante: {{.Quota}}. Recargue a tiempo."
 notify.quota_warning_gotify: "{{.Warning}}. Su cuota restante actual es {{.Quota}}. Recargue a tiempo."
 notify.phone_verification_required_for_api: "Vincula y verifica tu número de teléfono antes de usar la API."
-notify.phone_verification_reminder_for_api: "[Aviso de {{.SystemName}}] Tu cuenta aún no tiene un número de teléfono vinculado. Inicia sesión en la consola y vincula uno: {{.Link}} . Esta solicitud no se envió al modelo ni se facturó; simplemente envíala de nuevo. Este aviso aparece como máximo una vez cada 24 horas."
+notify.phone_verification_reminder_for_api: "[Aviso de {{.SystemName}}] Tu cuenta aún no tiene un número de teléfono vinculado. Inicia sesión en la consola y vincula uno antes de las 10:00 a. m., hora del este de EE. UU. (EDT, UTC-4), del viernes 25 de septiembre de 2026: {{.Link}} . Si no completas la vinculación para entonces, las llamadas posteriores a la API podrían fallar. Lamentamos sinceramente las molestias que esto pueda ocasionar. Esta solicitud no se envió al modelo ni se facturó; simplemente envíala de nuevo. Este aviso aparece como máximo una vez cada 24 horas."
 
 # Phone verification messages
 user.phone_already_registered: "Este número de teléfono ya está registrado"
