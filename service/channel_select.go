@@ -249,7 +249,11 @@ func requestedEndpointType(c *gin.Context) constant.EndpointType {
 	if c == nil || c.Request == nil || c.Request.URL == nil {
 		return ""
 	}
-	path := normalizePlaygroundRelayPath(c.Request.URL.Path)
+	path := c.Request.URL.Path
+	if strings.HasPrefix(path, "/api/alpha/decisions") {
+		return constant.EndpointTypeOpenRouterDecisions
+	}
+	path = normalizePlaygroundRelayPath(path)
 	if strings.HasPrefix(path, "/v1/responses/compact") {
 		return constant.EndpointTypeOpenAIResponseCompact
 	}
@@ -273,6 +277,9 @@ func requestedEndpointType(c *gin.Context) constant.EndpointType {
 func channelSupportsRequestedEndpoint(channel *model.Channel, modelName string, endpointType constant.EndpointType) bool {
 	if channel == nil {
 		return false
+	}
+	if endpointType == constant.EndpointTypeOpenRouterDecisions {
+		return channel.Type == constant.ChannelTypeOpenRouter
 	}
 	switch endpointType {
 	case constant.EndpointTypeOpenAIResponse:

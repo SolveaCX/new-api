@@ -54,9 +54,16 @@ const (
 	RelayModeResponsesCompact
 
 	RelayModeElevenLabs // ElevenLabs native voice/SFX endpoints (passthrough)
+
+	// RelayModeDecisions is OpenRouter's native structured decision endpoint.
+	// Keep it at the end so existing persisted relay-mode values remain stable.
+	RelayModeDecisions
 )
 
 func Path2RelayMode(path string) int {
+	if strings.HasPrefix(path, "/api/alpha/decisions") {
+		return RelayModeDecisions
+	}
 	if strings.HasPrefix(path, "/pg/") {
 		path = "/v1/" + strings.TrimPrefix(path, "/pg/")
 	}
