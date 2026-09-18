@@ -17,12 +17,12 @@ import (
 
 func TestSessionStoreCaptureEnabledForRequest(t *testing.T) {
 	originalEnabled := sessionCaptureEnabled
-	originalAllowedUser := sessionCaptureAllowedUser
+	originalAllowedGroup := sessionCaptureAllowedGroup
 	sessionCaptureEnabled = true
-	sessionCaptureAllowedUser = nil
+	sessionCaptureAllowedGroup = "plg"
 	t.Cleanup(func() {
 		sessionCaptureEnabled = originalEnabled
-		sessionCaptureAllowedUser = originalAllowedUser
+		sessionCaptureAllowedGroup = originalAllowedGroup
 	})
 
 	tests := []struct {
@@ -41,20 +41,11 @@ func TestSessionStoreCaptureEnabledForRequest(t *testing.T) {
 		{http.MethodGet, "/v1/messages", "claude-sonnet-4-5", false},
 	}
 	for _, test := range tests {
-		require.Equal(t, test.want, SessionStoreCaptureEnabledForRequest(test.method, test.path, test.model, 42), test.method+" "+test.path+" "+test.model)
+		require.Equal(t, test.want, SessionStoreCaptureEnabledForRequest(test.method, test.path, test.model, "plg"), test.method+" "+test.path+" "+test.model)
 	}
 
-	allowedUserID := 42
-	sessionCaptureAllowedUser = &allowedUserID
-	require.True(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", 42))
-	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", 41))
-}
-
-func TestSessionStoreOptionalUserIDFailsClosed(t *testing.T) {
-	t.Setenv("SESSION_CAPTURE_USER_ID", "invalid")
-	userID := sessionStoreOptionalUserID("SESSION_CAPTURE_USER_ID")
-	require.NotNil(t, userID)
-	require.Zero(t, *userID)
+	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", "default"))
+	require.False(t, SessionStoreCaptureEnabledForRequest(http.MethodPost, "/v1/messages", "claude-sonnet-4-5", ""))
 }
 
 func TestBuildSessionStoreTranscriptCanonicalNonStream(t *testing.T) {
