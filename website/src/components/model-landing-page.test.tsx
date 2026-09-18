@@ -903,6 +903,9 @@ describe("ModelLandingPage", () => {
     expect(imageHtml).toContain('class="h-9 w-full min-w-0 appearance-none');
     expect(imageHtml).toContain("resize-y");
     expect((imageHtml.match(/class="prompt-card prompt-card-linked"/g) ?? []).length).toBe(6);
+    const imagePromptBodies = [...imageHtml.matchAll(/<p class="prompt-card-full" lang="en">([\s\S]*?)<\/p>/g)].map((match) => match[1]);
+    expect(imagePromptBodies).toHaveLength(6);
+    expect(imagePromptBodies[0]).toContain(getImagePromptTemplates("gpt-image-2", "en")[0].prompt.slice(-90));
     expect(videoHtml).toContain('data-model-kind="video"');
     expect(videoHtml).toContain('id="prompt-library"');
     expect(videoHtml).toContain("Prompt library");
@@ -914,6 +917,9 @@ describe("ModelLandingPage", () => {
       expect(videoHtml).toContain(card.poster);
     }
     const promptLibraryHtml = videoHtml.slice(videoHtml.indexOf('id="prompt-library"'));
+    const videoPromptBodies = [...promptLibraryHtml.matchAll(/<p class="prompt-card-full" lang="en">([\s\S]*?)<\/p>/g)].map((match) => match[1]);
+    expect(videoPromptBodies).toHaveLength(6);
+    expect(videoPromptBodies[0]).toContain(getVideoPromptTemplates("seedance-2.5", "en")[0].prompt.slice(-90));
     expect(promptLibraryHtml).toContain('preload="auto"');
     expect(promptLibraryHtml).toContain('preload="none"');
     expect(promptLibraryHtml).not.toContain('poster="/assets/model-examples/product-macro.png"');
