@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { CollectionDiscountPrices } from "@/components/collection-discount-prices";
+import { MODEL_COLLECTION_COPY } from "@/lib/model-collections-copy";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import { ModelLogo } from "@/components/pricing-model-browser";
@@ -11,28 +13,12 @@ import {
 } from "@/lib/model-collections";
 import { localizePath, type Locale } from "@/lib/locales";
 import { displayTokens, type RankingsData } from "@/lib/rankings-live";
-import { type PricingData } from "@/lib/pricing";
+import { type PricingModel, type PricingData } from "@/lib/pricing";
 import { buildCollectionDetailSchema, buildCollectionsIndexSchema, stringifyJsonLd } from "@/lib/schema";
 
 const shellClass = "fk-site-frame";
 const detailShellClass = "fk-site-frame max-w-[1160px]";
-const COLLECTION_DISPLAY_ORDER = [
-  "image-generation",
-  "free-models",
-  "discounted-models",
-  "tool-calling",
-  "coding",
-  "roleplay-creative-writing",
-  "vision-models",
-  "openclaw-models",
-  "text-embedding-models",
-  "video-generation",
-  "audio-generation-models",
-  "text-to-speech-models",
-  "speech-to-text-models",
-  "rerank-models",
-  "general-purpose-models",
-] as const;
+
 
 const uiCopy = {
   en: {
@@ -40,7 +26,7 @@ const uiCopy = {
     heroTitle: "Find the right AI model for the job.",
     heroDescription: "Browse curated collections of models for coding, image generation, video, tool calling, and more. Each collection links to live model details, usage, and public pricing.",
     updated: "Updated with live catalog data",
-    browse: "Browse collection",
+    browse: "Explore models",
     allModels: "Browse all models",
     compare: "Compare models",
     featured: "Featured models",
@@ -60,7 +46,7 @@ const uiCopy = {
     heroTitle: "为每项任务找到合适的 AI 模型。",
     heroDescription: "浏览适合编程、图像生成、视频、工具调用等场景的模型集合，直接查看实时模型详情、调用量和公开价格。",
     updated: "根据实时模型目录更新",
-    browse: "查看集合",
+    browse: "查看模型",
     allModels: "浏览全部模型",
     compare: "比较模型",
     featured: "精选模型",
@@ -75,14 +61,14 @@ const uiCopy = {
     openConsole: "打开控制台",
     browsePricing: "浏览价格",
   },
-  es: { collections: "Colecciones", heroTitle: "Encuentra el modelo de IA adecuado para cada tarea.", heroDescription: "Explora colecciones de modelos para programación, imágenes, vídeo, herramientas y más, con detalles, uso y precios públicos.", updated: "Actualizado con datos del catálogo", browse: "Ver colección", allModels: "Ver todos los modelos", compare: "Comparar modelos", featured: "Modelos destacados", usage: "uso semanal", context: "contexto", from: "desde", explore: "Explora más colecciones", criteria: "Cómo se crea esta colección", capabilities: "Capacidades del catálogo", signals: "Señales de uso y precio", details: "Ver detalles del modelo", openConsole: "Abrir consola", browsePricing: "Ver precios" },
-  fr: { collections: "Collections", heroTitle: "Trouvez le modèle IA adapté à chaque tâche.", heroDescription: "Explorez des collections pour le code, l’image, la vidéo, les outils et plus, avec détails, usage et tarifs publics.", updated: "Mis à jour avec les données du catalogue", browse: "Voir la collection", allModels: "Voir tous les modèles", compare: "Comparer les modèles", featured: "Modèles sélectionnés", usage: "utilisation hebdomadaire", context: "contexte", from: "à partir de", explore: "Explorer d’autres collections", criteria: "Comment cette collection est créée", capabilities: "Capacités du catalogue", signals: "Signaux d’usage et de prix", details: "Voir les détails du modèle", openConsole: "Ouvrir la console", browsePricing: "Voir les tarifs" },
-  pt: { collections: "Coleções", heroTitle: "Encontre o modelo de IA certo para cada tarefa.", heroDescription: "Explore coleções para programação, imagens, vídeo, ferramentas e muito mais, com detalhes, uso e preços públicos.", updated: "Atualizado com dados do catálogo", browse: "Ver coleção", allModels: "Ver todos os modelos", compare: "Comparar modelos", featured: "Modelos em destaque", usage: "uso semanal", context: "contexto", from: "a partir de", explore: "Explore mais coleções", criteria: "Como esta coleção é criada", capabilities: "Capacidades do catálogo", signals: "Sinais de uso e preço", details: "Ver detalhes do modelo", openConsole: "Abrir console", browsePricing: "Ver preços" },
-  ru: { collections: "Подборки", heroTitle: "Найдите подходящую ИИ-модель для каждой задачи.", heroDescription: "Изучайте подборки для программирования, изображений, видео, инструментов и других сценариев с актуальными ценами и данными.", updated: "Обновляется по данным каталога", browse: "Открыть подборку", allModels: "Все модели", compare: "Сравнить модели", featured: "Избранные модели", usage: "за неделю", context: "контекст", from: "от", explore: "Другие подборки", criteria: "Как формируется подборка", capabilities: "Возможности каталога", signals: "Сигналы использования и цены", details: "Подробнее о модели", openConsole: "Открыть консоль", browsePricing: "Цены" },
-  ja: { collections: "コレクション", heroTitle: "タスクに合った AI モデルを見つけましょう。", heroDescription: "コーディング、画像、動画、ツール呼び出しなどのモデルを、詳細・利用量・公開価格とともに比較できます。", updated: "最新のカタログデータで更新", browse: "コレクションを見る", allModels: "すべてのモデル", compare: "モデルを比較", featured: "注目のモデル", usage: "週間利用量", context: "コンテキスト", from: "から", explore: "他のコレクション", criteria: "このコレクションの基準", capabilities: "カタログの機能", signals: "利用量と価格のシグナル", details: "モデルの詳細を見る", openConsole: "コンソールを開く", browsePricing: "料金を見る" },
-  vi: { collections: "Bộ sưu tập", heroTitle: "Tìm mô hình AI phù hợp cho từng công việc.", heroDescription: "Khám phá bộ sưu tập cho lập trình, hình ảnh, video, gọi công cụ và hơn thế nữa với dữ liệu, lượt dùng và giá công khai.", updated: "Cập nhật theo catalog trực tiếp", browse: "Xem bộ sưu tập", allModels: "Xem tất cả mô hình", compare: "So sánh mô hình", featured: "Mô hình nổi bật", usage: "lượt dùng mỗi tuần", context: "ngữ cảnh", from: "từ", explore: "Khám phá bộ sưu tập khác", criteria: "Cách tạo bộ sưu tập", capabilities: "Khả năng trong catalog", signals: "Tín hiệu sử dụng và giá", details: "Xem chi tiết mô hình", openConsole: "Mở console", browsePricing: "Xem giá" },
-  de: { collections: "Sammlungen", heroTitle: "Finden Sie das passende KI-Modell für jede Aufgabe.", heroDescription: "Entdecken Sie Sammlungen für Code, Bilder, Video, Tool-Calling und mehr mit aktuellen Details, Nutzung und öffentlichen Preisen.", updated: "Mit aktuellen Katalogdaten aktualisiert", browse: "Sammlung öffnen", allModels: "Alle Modelle", compare: "Modelle vergleichen", featured: "Ausgewählte Modelle", usage: "Nutzung pro Woche", context: "Kontext", from: "ab", explore: "Weitere Sammlungen", criteria: "So entsteht diese Sammlung", capabilities: "Katalogfunktionen", signals: "Nutzungs- und Preissignale", details: "Modelldetails ansehen", openConsole: "Konsole öffnen", browsePricing: "Preise ansehen" },
-  id: { collections: "Koleksi", heroTitle: "Temukan model AI yang tepat untuk setiap tugas.", heroDescription: "Jelajahi koleksi untuk coding, gambar, video, pemanggilan alat, dan lainnya dengan detail, penggunaan, serta harga publik.", updated: "Diperbarui dengan data katalog langsung", browse: "Lihat koleksi", allModels: "Lihat semua model", compare: "Bandingkan model", featured: "Model pilihan", usage: "penggunaan mingguan", context: "konteks", from: "mulai", explore: "Jelajahi koleksi lain", criteria: "Cara koleksi ini dibuat", capabilities: "Kemampuan katalog", signals: "Sinyal penggunaan dan harga", details: "Lihat detail model", openConsole: "Buka konsol", browsePricing: "Lihat harga" },
+  es: { collections: "Colecciones", heroTitle: "Encuentra el modelo de IA adecuado para cada tarea.", heroDescription: "Explora colecciones de modelos para programación, imágenes, vídeo, herramientas y más, con detalles, uso y precios públicos.", updated: "Actualizado con datos del catálogo", browse: "Explorar modelos", allModels: "Ver todos los modelos", compare: "Comparar modelos", featured: "Modelos destacados", usage: "uso semanal", context: "contexto", from: "desde", explore: "Explora más colecciones", criteria: "Cómo se crea esta colección", capabilities: "Capacidades del catálogo", signals: "Señales de uso y precio", details: "Ver detalles del modelo", openConsole: "Abrir consola", browsePricing: "Ver precios" },
+  fr: { collections: "Collections", heroTitle: "Trouvez le modèle IA adapté à chaque tâche.", heroDescription: "Explorez des collections pour le code, l’image, la vidéo, les outils et plus, avec détails, usage et tarifs publics.", updated: "Mis à jour avec les données du catalogue", browse: "Explorer les modèles", allModels: "Voir tous les modèles", compare: "Comparer les modèles", featured: "Modèles sélectionnés", usage: "utilisation hebdomadaire", context: "contexte", from: "à partir de", explore: "Explorer d’autres collections", criteria: "Comment cette collection est créée", capabilities: "Capacités du catalogue", signals: "Signaux d’usage et de prix", details: "Voir les détails du modèle", openConsole: "Ouvrir la console", browsePricing: "Voir les tarifs" },
+  pt: { collections: "Coleções", heroTitle: "Encontre o modelo de IA certo para cada tarefa.", heroDescription: "Explore coleções para programação, imagens, vídeo, ferramentas e muito mais, com detalhes, uso e preços públicos.", updated: "Atualizado com dados do catálogo", browse: "Explorar modelos", allModels: "Ver todos os modelos", compare: "Comparar modelos", featured: "Modelos em destaque", usage: "uso semanal", context: "contexto", from: "a partir de", explore: "Explore mais coleções", criteria: "Como esta coleção é criada", capabilities: "Capacidades do catálogo", signals: "Sinais de uso e preço", details: "Ver detalhes do modelo", openConsole: "Abrir console", browsePricing: "Ver preços" },
+  ru: { collections: "Подборки", heroTitle: "Найдите подходящую ИИ-модель для каждой задачи.", heroDescription: "Изучайте подборки для программирования, изображений, видео, инструментов и других сценариев с актуальными ценами и данными.", updated: "Обновляется по данным каталога", browse: "Посмотреть модели", allModels: "Все модели", compare: "Сравнить модели", featured: "Избранные модели", usage: "за неделю", context: "контекст", from: "от", explore: "Другие подборки", criteria: "Как формируется подборка", capabilities: "Возможности каталога", signals: "Сигналы использования и цены", details: "Подробнее о модели", openConsole: "Открыть консоль", browsePricing: "Цены" },
+  ja: { collections: "コレクション", heroTitle: "タスクに合った AI モデルを見つけましょう。", heroDescription: "コーディング、画像、動画、ツール呼び出しなどのモデルを、詳細・利用量・公開価格とともに比較できます。", updated: "最新のカタログデータで更新", browse: "モデルを見る", allModels: "すべてのモデル", compare: "モデルを比較", featured: "注目のモデル", usage: "週間利用量", context: "コンテキスト", from: "から", explore: "他のコレクション", criteria: "このコレクションの基準", capabilities: "カタログの機能", signals: "利用量と価格のシグナル", details: "モデルの詳細を見る", openConsole: "コンソールを開く", browsePricing: "料金を見る" },
+  vi: { collections: "Bộ sưu tập", heroTitle: "Tìm mô hình AI phù hợp cho từng công việc.", heroDescription: "Khám phá bộ sưu tập cho lập trình, hình ảnh, video, gọi công cụ và hơn thế nữa với dữ liệu, lượt dùng và giá công khai.", updated: "Cập nhật theo catalog trực tiếp", browse: "Khám phá mô hình", allModels: "Xem tất cả mô hình", compare: "So sánh mô hình", featured: "Mô hình nổi bật", usage: "lượt dùng mỗi tuần", context: "ngữ cảnh", from: "từ", explore: "Khám phá bộ sưu tập khác", criteria: "Cách tạo bộ sưu tập", capabilities: "Khả năng trong catalog", signals: "Tín hiệu sử dụng và giá", details: "Xem chi tiết mô hình", openConsole: "Mở console", browsePricing: "Xem giá" },
+  de: { collections: "Sammlungen", heroTitle: "Finden Sie das passende KI-Modell für jede Aufgabe.", heroDescription: "Entdecken Sie Sammlungen für Code, Bilder, Video, Tool-Calling und mehr mit aktuellen Details, Nutzung und öffentlichen Preisen.", updated: "Mit aktuellen Katalogdaten aktualisiert", browse: "Modelle entdecken", allModels: "Alle Modelle", compare: "Modelle vergleichen", featured: "Ausgewählte Modelle", usage: "Nutzung pro Woche", context: "Kontext", from: "ab", explore: "Weitere Sammlungen", criteria: "So entsteht diese Sammlung", capabilities: "Katalogfunktionen", signals: "Nutzungs- und Preissignale", details: "Modelldetails ansehen", openConsole: "Konsole öffnen", browsePricing: "Preise ansehen" },
+  id: { collections: "Koleksi", heroTitle: "Temukan model AI yang tepat untuk setiap tugas.", heroDescription: "Jelajahi koleksi untuk coding, gambar, video, pemanggilan alat, dan lainnya dengan detail, penggunaan, serta harga publik.", updated: "Diperbarui dengan data katalog langsung", browse: "Jelajahi model", allModels: "Lihat semua model", compare: "Bandingkan model", featured: "Model pilihan", usage: "penggunaan mingguan", context: "konteks", from: "mulai", explore: "Jelajahi koleksi lain", criteria: "Cara koleksi ini dibuat", capabilities: "Kemampuan katalog", signals: "Sinyal penggunaan dan harga", details: "Lihat detail model", openConsole: "Buka konsol", browsePricing: "Lihat harga" },
 } as const;
 
 const modelFallbackCopy: Record<Locale, (name: string, vendor: string, collection: string) => string> = {
@@ -142,7 +128,7 @@ function CollectionCard(props: { collection: ModelCollectionDefinition; locale: 
       style={{ animationDelay: `${120 + props.index * 55}ms` }}
     >
       <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#16151B] sm:text-xl">{copy.title}</h2>
-      <p className="mt-2 text-sm leading-6 text-[#65616F]">{copy.shortDescription} {copy.intro}</p>
+      <p className="mt-2 text-sm leading-6 text-[#65616F]">{copy.shortDescription}</p>
       <span className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-semibold text-[#7C3AED]">{ui.browse}<ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
     </Link>
   );
@@ -150,13 +136,12 @@ function CollectionCard(props: { collection: ModelCollectionDefinition; locale: 
 
 export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingData }) {
   const ui = getUiCopy(props.locale);
-  const orderedCollections = getAvailableModelCollections(props.pricing.models).sort(
-    (a, b) => COLLECTION_DISPLAY_ORDER.indexOf(a.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]) - COLLECTION_DISPLAY_ORDER.indexOf(b.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]),
-  );
+  const overview = MODEL_COLLECTION_COPY[props.locale].index;
+  const orderedCollections = getAvailableModelCollections(props.pricing.models);
   const schema = buildCollectionsIndexSchema({
     locale: props.locale,
-    title: ui.collections,
-    description: ui.heroDescription,
+    title: overview.slogan,
+    description: overview.intro,
     collections: orderedCollections.map((collection) => ({
       name: getModelCollectionCopy(collection, props.locale).title,
       path: localizePath(`/collections/${collection.slug}`, props.locale),
@@ -169,8 +154,8 @@ export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingD
       <section className="py-10 sm:py-14">
         <div className={`${shellClass} max-w-[1160px]`}>
           <div className="max-w-5xl">
-            <h1 className="landing-animate-fade-up text-3xl font-semibold tracking-[-0.035em] text-[#16151B] opacity-0 sm:text-4xl" style={{ animationDelay: "40ms" }}>{ui.collections}</h1>
-            <p className="landing-animate-fade-up mt-3 max-w-4xl text-base leading-7 text-[#5F5A68] opacity-0" style={{ animationDelay: "80ms" }}>{ui.heroDescription}</p>
+            <h1 className="landing-animate-fade-up text-3xl font-semibold tracking-[-0.035em] text-[#16151B] opacity-0 sm:text-4xl" style={{ animationDelay: "40ms" }}>{overview.slogan}</h1>
+            <p className="landing-animate-fade-up mt-3 max-w-4xl text-base leading-7 text-[#5F5A68] opacity-0" style={{ animationDelay: "80ms" }}>{overview.intro}</p>
           </div>
           <div className="mt-8 grid gap-5 sm:grid-cols-2">
             {orderedCollections.map((collection, index) => <CollectionCard key={collection.slug} collection={collection} locale={props.locale} index={index} />)}
@@ -182,7 +167,7 @@ export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingD
   );
 }
 
-function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: string }; rank: number; usage?: number; locale: Locale }) {
+function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: string }; rank: number; usage?: number; locale: Locale; discountModel?: PricingModel }) {
   const ui = getUiCopy(props.locale);
   return (
     <article className="-mx-3 flex min-h-[232px] flex-col rounded-xl border-t border-[#ECEAF1] px-3 py-6 transition duration-200 first:border-t-0 hover:bg-[#FBFAFE] sm:-mx-4 sm:px-4">
@@ -200,6 +185,7 @@ function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: 
         {props.usage != null ? <span className="text-sm font-medium text-[#777180]">{displayTokens(props.usage).toLocaleString()} {ui.usage}</span> : null}
       </div>
       {props.model.description ? <p className="mt-4 line-clamp-4 min-h-24 text-sm leading-6 text-[#5F5A68]">{props.model.description}</p> : null}
+      {props.discountModel ? <CollectionDiscountPrices model={props.discountModel} locale={props.locale} /> : null}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#777180]">
           {formatContext(props.model.context) ? <span>{formatContext(props.model.context)} {ui.context}</span> : null}
@@ -230,17 +216,14 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
     };
   });
   const topModelNames = new Intl.ListFormat(props.locale, { style: "long", type: "conjunction" }).format(cards.slice(0, 3).map((model) => model.name));
-  const updatedMonth = new Intl.DateTimeFormat(props.locale, { month: "long", year: "numeric" }).format(new Date());
-  const rankingHeading = props.locale === "en"
-    ? `Top ${copy.title.replace(/^Best /, "").replace(/ on Flatkey$/, "")} on Flatkey`
-    : `${ui.featured}: ${copy.title}`;
+  const rankingHeading = copy.title;
   const related = getAvailableModelCollections(props.pricing.models).filter((collection) => collection.slug !== props.collection.slug);
   const schema = buildCollectionDetailSchema({
     locale: props.locale,
     collectionsName: ui.collections,
     slug: props.collection.slug,
-    title: copy.title,
-    description: `${copy.shortDescription} ${copy.intro}`,
+    title: copy.slogan,
+    description: copy.intro,
     models: cards.map((model, index) => ({
       name: model.name,
       path: localizePath(model.href, props.locale),
@@ -258,10 +241,9 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         <div className={detailShellClass}>
           <nav className="text-sm text-[#777180]"><Link href={localizePath("/collections", props.locale)} className="hover:text-[#6D28D9]">{ui.collections}</Link><span className="mx-2">/</span><span>{copy.title}</span></nav>
           <div className="mt-4">
-            <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[#16151B] sm:text-4xl">{copy.title}</h1>
-            <p className="mt-2 text-sm font-medium text-[#777180]">{ui.updated} · {updatedMonth}</p>
+            <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[#16151B] sm:text-4xl">{copy.slogan}</h1>
             <p className="mt-5 text-base leading-7 text-[#5F5A68]">{copy.intro}</p>
-            <p className="mt-3 text-base leading-7 text-[#5F5A68]">{topModelsSummaryCopy[props.locale](topModelNames)}</p>
+            {cards.length > 0 ? <p className="mt-3 text-base leading-7 text-[#5F5A68]">{topModelsSummaryCopy[props.locale](topModelNames)}</p> : null}
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href={localizePath("/models", props.locale)} className="inline-flex items-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold !text-white transition hover:-translate-y-0.5 hover:!bg-[#5B21B6] hover:shadow-[0_10px_20px_-14px_rgba(76,29,149,.8)]">{ui.allModels}<ArrowRight className="size-4" /></Link>
             </div>
@@ -273,9 +255,8 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         <div className={detailShellClass}>
           <div>
               <div className="mb-2 flex items-center gap-3"><Sparkles className="size-5 text-[#7C3AED]" /><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{rankingHeading}</h2></div>
-              <p className="mb-3 text-sm leading-6 text-[#777180]">{copy.criteria}</p>
               <div>
-                {cards.length ? cards.map((model, index) => <ModelRow key={model.href} model={model} rank={index + 1} locale={props.locale} usage={usageByName.get(model.rawName)} />) : <p className="text-sm text-[#777180]">{copy.empty}</p>}
+                {cards.length ? cards.map((model, index) => <ModelRow key={model.href} model={model} rank={index + 1} locale={props.locale} usage={usageByName.get(model.rawName)} discountModel={props.collection.slug === "discounted-models" ? models[index] : undefined} />) : <p className="text-sm text-[#777180]">{copy.empty}</p>}
               </div>
           </div>
         </div>
