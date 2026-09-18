@@ -87,6 +87,10 @@ type GeneralOpenAIRequest struct {
 	// OpenRouter Params
 	Usage     json.RawMessage `json:"usage,omitempty"`
 	Reasoning json.RawMessage `json:"reasoning,omitempty"`
+	// OpenRouter Decisions API fields.  They are intentionally raw so the
+	// decision state/question schema can evolve without losing provider fields.
+	State     json.RawMessage `json:"state,omitempty"`
+	Questions json.RawMessage `json:"questions,omitempty"`
 	// Ali Qwen Params
 	VlHighResolutionImages json.RawMessage `json:"vl_high_resolution_images,omitempty"`
 	EnableThinking         json.RawMessage `json:"enable_thinking,omitempty"`
@@ -131,6 +135,13 @@ func (r *GeneralOpenAIRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	if r.Input != nil {
 		inputs := r.ParseInput()
 		texts = append(texts, inputs...)
+	}
+
+	if len(r.State) > 0 {
+		texts = append(texts, string(r.State))
+	}
+	if len(r.Questions) > 0 {
+		texts = append(texts, string(r.Questions))
 	}
 
 	maxTokens := lo.FromPtrOr(r.MaxTokens, uint(0))

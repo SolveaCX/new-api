@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -400,8 +401,26 @@ func GetAndValidateTextRequest(c *gin.Context, relayMode int) (*dto.GeneralOpenA
 		if textRequest.Instruction == "" {
 			return nil, errors.New("field instruction is required")
 		}
+	case relayconstant.RelayModeDecisions:
+		if lo.FromPtrOr(textRequest.Stream, false) {
+			return nil, errors.New("stream is not supported for decisions")
+		}
+		if !hasJSONValue(textRequest.State) {
+			return nil, errors.New("field state is required")
+		}
+		if !hasJSONValue(textRequest.Questions) {
+			return nil, errors.New("field questions is required")
+		}
+		if common.GetJsonType(textRequest.Questions) != "object" {
+			return nil, errors.New("field questions must be an object")
+		}
 	}
 	return textRequest, nil
+}
+
+func hasJSONValue(raw []byte) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
 }
 
 func GetAndValidateGeminiRequest(c *gin.Context) (*dto.GeminiChatRequest, error) {

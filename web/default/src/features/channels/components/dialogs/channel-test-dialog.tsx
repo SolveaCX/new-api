@@ -99,6 +99,10 @@ type TestResult = {
 const endpointTypeOptions: Array<{ value: string; label: string }> = [
   { value: 'auto', label: 'Auto detect (default)' },
   { value: 'openai', label: 'OpenAI (/v1/chat/completions)' },
+  {
+    value: 'openrouter-decisions',
+    label: 'OpenRouter Decisions (/api/alpha/decisions)',
+  },
   { value: 'openai-response', label: 'OpenAI Responses (/v1/responses)' },
   {
     value: 'openai-response-compact',
@@ -122,6 +126,7 @@ const STREAM_INCOMPATIBLE_ENDPOINTS = new Set([
   'image-generation',
   'jina-rerank',
   'openai-response-compact',
+  'openrouter-decisions',
 ])
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'

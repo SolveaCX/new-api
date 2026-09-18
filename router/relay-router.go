@@ -104,6 +104,22 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.Relay(c, types.RelayFormatOpenAIRealtime)
 		})
 	}
+
+	// OpenRouter's Decisions API is a native endpoint outside the OpenAI
+	// /v1 namespace.  It still uses the standard token authentication,
+	// distribution, retry and billing pipeline, while the OpenRouter adaptor
+	// rewrites the upstream URL to /api/alpha/decisions.
+	decisionsRouter := router.Group("/api/alpha")
+	decisionsRouter.Use(middleware.RouteTag("relay"))
+	decisionsRouter.Use(middleware.SystemPerformanceCheck())
+	decisionsRouter.Use(middleware.TokenAuth())
+	decisionsRouter.Use(middleware.ModelRequestRateLimit())
+	decisionsRouter.Use(middleware.Distribute())
+	{
+		decisionsRouter.POST("/decisions", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAI)
+		})
+	}
 	{
 		//http router
 		httpRouter := relayV1Router.Group("")

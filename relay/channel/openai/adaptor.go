@@ -95,6 +95,23 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if info == nil {
+		return "", errors.New("relay info is nil")
+	}
+	// OpenRouter Decisions is not an OpenAI /v1 endpoint.  Keep the public
+	// relay path (/api/alpha/decisions) separate from the upstream path and
+	// normalize a mistakenly configured /api/v1 base URL for compatibility.
+	if info.RelayMode == relayconstant.RelayModeDecisions {
+		if info.ChannelMeta == nil {
+			return "", errors.New("channel metadata is nil")
+		}
+		if info.ChannelType != constant.ChannelTypeOpenRouter {
+			return "", fmt.Errorf("decisions endpoint requires an OpenRouter channel")
+		}
+		baseURL := strings.TrimRight(info.ChannelBaseUrl, "/")
+		baseURL = strings.TrimSuffix(baseURL, "/v1")
+		return baseURL + "/alpha/decisions", nil
+	}
 	if info.RelayMode == relayconstant.RelayModeRealtime {
 		if strings.HasPrefix(info.ChannelBaseUrl, "https://") {
 			baseUrl := strings.TrimPrefix(info.ChannelBaseUrl, "https://")
@@ -236,6 +253,18 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
 	if request == nil {
 		return nil, errors.New("request is nil")
+	}
+	// Decisions requests already use OpenRouter's native schema.  Do not apply
+	// chat-specific transformations (reasoning, usage, tools, stream options)
+	// that would alter state/questions or make the upstream reject the body.
+	if info != nil && info.RelayMode == relayconstant.RelayModeDecisions {
+		if info.ChannelMeta == nil {
+			return nil, errors.New("channel metadata is nil")
+		}
+		if info.ChannelType != constant.ChannelTypeOpenRouter {
+			return nil, errors.New("decisions endpoint requires an OpenRouter channel")
+		}
+		return request, nil
 	}
 	// parallel_tool_calls 仅在指定 tools 时合法。当客户端显式传了该字段但 tools 为空时，
 	// 上游会报 "'parallel_tool_calls' is only allowed when 'tools' are specified"，此处剔除以保证兼容。
@@ -648,6 +677,8 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
 	switch info.RelayMode {
+	case relayconstant.RelayModeDecisions:
+		usage, err = OpenRouterDecisionsHandler(c, resp, info)
 	case relayconstant.RelayModeRealtime:
 		err, usage = OpenaiRealtimeHandler(c, info)
 	case relayconstant.RelayModeAudioSpeech:
