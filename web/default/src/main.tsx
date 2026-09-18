@@ -84,7 +84,8 @@ const queryClient = new QueryClient({
     onError: (error) => {
       if (error instanceof AxiosError) {
         if (error.response?.status === 401) {
-          toast.error(i18next.t('Session expired!'))
+          // Axios owns the user-facing 401 toast. Keeping this callback focused
+          // on auth cleanup and navigation avoids showing the same error twice.
           useAuthStore.getState().auth.reset()
           const redirect = `${router.history.location.href}`
           router.navigate({ to: '/sign-in', search: { redirect } })

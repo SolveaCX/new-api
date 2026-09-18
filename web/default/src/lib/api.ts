@@ -32,6 +32,12 @@ declare module 'axios' {
 
 export type ApiRequestConfig = AxiosRequestConfig
 
+const SESSION_EXPIRED_TOAST_ID = 'session-expired'
+
+function showSessionExpiredToast() {
+  toast.error(t('Session expired!'), { id: SESSION_EXPIRED_TOAST_ID })
+}
+
 // ============================================================================
 // Axios Instance Configuration
 // ============================================================================
@@ -115,7 +121,7 @@ api.interceptors.response.use(
       }
 
       if (!skip) {
-        toast.error(t('Session expired!'))
+        showSessionExpiredToast()
       }
     } else if (!skip) {
       // Other errors: show error message from response or default
