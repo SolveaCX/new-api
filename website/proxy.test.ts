@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { NextRequest } from "next/server";
 import { proxy, resolveModelAliasRedirectPath, resolvePermanentSeoRedirectPath } from "./src/proxy";
+import { LOCALES, localizePath } from "./src/lib/locales";
+import { getSkagLandingLocales } from "./src/lib/skag-landing";
 
 function request(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`https://flatkey.ai${path}`, { headers });
@@ -283,5 +285,54 @@ describe("website asset requests behind a TLS-terminating proxy", () => {
     const legacy = await proxy(new NextRequest("http://flatkey.ai/careers.html?source=legacy"));
     expect(legacy.status).toBe(301);
     expect(legacy.headers.get("location")).toBe("https://flatkey.ai/careers?source=legacy");
+  });
+});
+
+describe("Search Console historical URL recovery", () => {
+  test.each([
+    ["/login.html", "/login"],
+    ["/models.html", "/models"],
+    ["/sla.html", "/sla"],
+    ["/legal-sla.html", "/sla"],
+    ["/docs.html", "/docs"],
+    ["/privacy.html", "/privacy"],
+    ["/refund-policy.html", "/refund-policy"],
+    ["/playground.html", "/playground"],
+  ])("permanently redirects the reported HTML URL %s in each locale", async (source, destination) => {
+    for (const locale of LOCALES) {
+      const response = await proxy(request(`${localizePath(source, locale)}?source=gsc&redirect=%2Fkeys`));
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(
+        `https://flatkey.ai${localizePath(destination, locale)}?source=gsc&redirect=%2Fkeys`
+      );
+    }
+  });
+
+  test.each(["gpt-api", "claude-api"] as const)("sends old %s model pages only to existing translations", async (slug) => {
+    for (const locale of LOCALES) {
+      const destinationLocale = getSkagLandingLocales(slug).includes(locale) ? locale : "en";
+      const destination = localizePath(`/${slug}`, destinationLocale);
+      const headers = { cookie: `fk_locale=${locale}`, "accept-language": locale };
+      const response = await proxy(request(`${localizePath(`/models/${slug}`, locale)}?source=gsc`, headers));
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(`https://flatkey.ai${destination}?source=gsc`);
+
+      // Following the redirect with the same language preference must terminate.
+      const finalResponse = await proxy(request(`${destination}?source=gsc`, headers));
+      expect(finalResponse.headers.get("location")).toBeNull();
+
+      if (destinationLocale !== locale) {
+        const oldTarget = await proxy(request(`${localizePath(`/${slug}`, locale)}?source=gsc`, headers));
+        expect(oldTarget.status).toBe(301);
+        expect(oldTarget.headers.get("location")).toBe(`https://flatkey.ai${destination}?source=gsc`);
+      }
+    }
+  });
+
+  test("does not invent replacements for deleted content or arbitrary HTML paths", async () => {
+    for (const path of ["/missing.html", "/blog/marcus-note-md-srcset", "/models/retired-model", "/unknown/models/gpt-api"]) {
+      const response = await proxy(request(path, { "user-agent": "Googlebot/2.1" }));
+      expect(response.headers.get("location")).toBeNull();
+    }
   });
 });
