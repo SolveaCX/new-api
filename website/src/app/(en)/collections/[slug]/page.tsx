@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { ModelCollectionDetail } from "@/components/model-collections-page";
-import { getModelCollection, getModelCollectionSeoDescription, getModelCollectionCopy, MIN_COLLECTION_MODELS, MODEL_COLLECTIONS, selectCollectionModels } from "@/lib/model-collections";
+import { getModelCollection, getModelCollectionSeoDescription, getModelCollectionCopy, getLegacyCollectionDestination, MODEL_COLLECTIONS } from "@/lib/model-collections";
 import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { fetchRankingsData } from "@/lib/rankings-live";
 import { buildMetadata } from "@/lib/seo";
@@ -16,14 +16,15 @@ export async function generateMetadata(props: Props) {
   const collection = getModelCollection(params.slug);
   if (!collection) return {};
   const copy = getModelCollectionCopy(collection, "en");
-  return buildMetadata({ title: `${copy.title} | Flatkey`, description: getModelCollectionSeoDescription(collection, "en"), pathname: `/collections/${collection.slug}`, absoluteTitle: true });
+  return buildMetadata({ title: copy.seoTitle, description: getModelCollectionSeoDescription(collection, "en"), pathname: `/collections/${collection.slug}`, absoluteTitle: true });
 }
 
 export default async function Page(props: Props) {
   const params = await props.params;
+  const legacy = getLegacyCollectionDestination(params.slug);
+  if (legacy) permanentRedirect(legacy);
   const collection = getModelCollection(params.slug);
   if (!collection) notFound();
   const [pricing, rankings] = await Promise.all([getPricingData(WEBSITE_PUBLIC_PRICING_GROUP), fetchRankingsData()]);
-  if (selectCollectionModels(collection, pricing.models, MIN_COLLECTION_MODELS).length < MIN_COLLECTION_MODELS) notFound();
   return <ModelCollectionDetail locale="en" collection={collection} pricing={pricing} rankings={rankings} />;
 }
