@@ -286,23 +286,37 @@ function renderHeroSub(locale: Locale, value: string) {
 }
 
 const FEATURED_MODEL_STRIP = [
-  ["deepseek.svg", "deepseek-v4-pro", "DeepSeek · reasoning model"],
-  ["openai.svg", "openai/gpt-5.6-sol", "GPT · frontier model"],
-  ["bytedance.svg", "seedance-2.5", "ByteDance · video model"],
-  ["zai.svg", "glm-5.3", "GLM · coding model"],
-  ["claude.svg", "claude-opus-5", "Claude · reasoning model"],
+  ["deepseek.svg", "deepseek-v4-pro", "DeepSeek", "deepseek-v4-pro"],
+  ["openai.svg", "GPT-5.6 Sol", "GPT", "gpt-5.6-sol"],
+  ["bytedance.svg", "seedance-2.5", "ByteDance", "seedance-2.5"],
+  ["zai.svg", "GLM-5.3", "GLM", "glm-5.3"],
+  ["claude.svg", "claude-opus-5", "Claude", "claude-opus-5"],
+  ["minimax.svg", "MiniMax H3", "MiniMax", "minimax-h3"],
+  ["zai.svg", "GLM-5.2", "GLM", "glm-5.2"],
+  ["openai.svg", "GPT-6 Astra", "GPT", "gpt-6-astra"],
+  ["deepseek.svg", "DeepSeek V3.1", "DeepSeek", "deepseek-v3.1"],
 ] as const;
 
-const FEATURED_MODEL_STRIP_ZH = [
-  ["deepseek.svg", "deepseek-v4-pro", "DeepSeek · 推理模型"],
-  ["openai.svg", "openai/gpt-5.6-sol", "GPT · 前沿模型"],
-  ["bytedance.svg", "seedance-2.5", "字节跳动 · 视频模型"],
-  ["zai.svg", "glm-5.3", "GLM · 编程模型"],
-  ["claude.svg", "claude-opus-5", "Claude · 推理模型"],
-] as const;
+const MODEL_STRIP_DESCRIPTION: Record<Locale, string> = {
+  en: "API, pricing & examples",
+  zh: "API、价格与调用示例",
+  es: "API, precios y ejemplos",
+  fr: "API, tarifs et exemples",
+  pt: "API, preços e exemplos",
+  ru: "API, цены и примеры",
+  ja: "API・料金・呼び出し例",
+  vi: "API, giá và ví dụ",
+  de: "API, Preise und Beispiele",
+  id: "API, harga, dan contoh",
+};
 
 function localizedFeaturedModels(locale: Locale) {
-  return locale === "zh" ? FEATURED_MODEL_STRIP_ZH : FEATURED_MODEL_STRIP;
+  return FEATURED_MODEL_STRIP.map(([logo, name, provider, slug]) => [
+    logo,
+    name,
+    `${provider} · ${MODEL_STRIP_DESCRIPTION[locale]}`,
+    localizePath(`/models/${slug}`, locale),
+  ] as const);
 }
 
 function providerDescription(locale: Locale, value: string) {
@@ -865,7 +879,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
         @media(max-width:620px){.online-static-page:has(> header.hero.heroUnified) .heroUnified h1.display{font-size:38px;line-height:1.06;letter-spacing:0}.online-static-page:has(> header.hero.heroUnified) .heroUnified h1 .price{margin-top:8px}.online-static-page:has(> header.hero.heroUnified) .heroUnified .heroCtas .btn{white-space:normal;text-align:center}}
         @media(max-width:380px){.online-static-page:has(> header.hero.heroUnified) .heroUnified h1.display{font-size:34px}}
         .compactHero{min-height:540px!important;background:#fff!important;border-bottom:0!important;color:#09090b!important}
-        .compactHero .heroGrid{display:block!important;max-width:none!important;padding:98px 24px 86px!important;text-align:center!important}
+        .compactHero .heroGrid{display:block!important;max-width:none!important;padding:98px var(--fk-site-gutter) 86px!important;text-align:center!important}
         .compactHero .heroCopy{max-width:1280px!important;margin:0 auto!important;align-items:center!important}
         .compactHero .eyebrow,.compactHero .heroSavings{display:none!important}
         .compactHero h1.display{max-width:none!important;margin:0!important;color:#050505!important;font-size:clamp(48px,5.2vw,80px)!important;line-height:1.12!important;letter-spacing:-.055em!important;font-weight:650!important;text-wrap:balance!important}
@@ -884,24 +898,30 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
         .compactHero .heroPrimary{background:#050505!important;color:#fff!important;box-shadow:none!important}
         .compactHero .heroPrimary::after{content:"↗";display:inline-block;margin-left:10px;font-size:1.15em;line-height:1;transform:translateY(-1px)}
         .compactHero .heroSecondary{border:1.5px solid #444!important;background:#fff!important;color:#111!important;box-shadow:none!important}
+        .online-static-page:has(> header.compactHero){--fk-site-gutter:clamp(24px,5.5vw,88px)}
         .modelStrip{background:#f5f6f7;border-top:1px solid #f0f1f2;border-bottom:1px solid #eceef0}
-        .modelStripInner{min-height:84px;padding:0 300px}
+        .modelStripInner{min-height:84px;padding:0 96px}
         .modelStripCarousel{display:block}
         .modelStripViewport{overflow:hidden}
-        .modelStripTrack{display:flex;width:max-content;align-items:center;animation:modelStripMarquee 32s linear infinite;will-change:transform}
+        .modelStripTrack{display:flex;width:max-content;align-items:center;animation:modelStripMarquee 58s linear infinite;will-change:transform}
         .modelStripSet{display:flex;flex:none;align-items:center}
         .modelStripSetClone{display:flex}
-        .modelStripItem{display:flex;align-items:center;justify-content:center;gap:14px;width:250px;min-width:0;height:84px;flex:none;padding:0}
+        .modelStripItem{display:flex;align-items:center;justify-content:center;gap:14px;width:260px;min-width:0;height:84px;flex:none;padding:0}
+        .modelStripTrack:hover{animation-play-state:paused}
+        .modelStripTrack:has(a:focus-visible){animation:none;transform:none}
+        .modelStripViewport:has(a:focus-visible){overflow-x:auto}
+        .online-static-page a.modelStripItem{color:inherit;text-decoration:none;cursor:pointer}
+        .online-static-page a.modelStripItem:focus-visible{outline:2px solid #7c3aed;outline-offset:-3px;border-radius:8px}
         .modelStripItem img{width:28px;height:28px;flex:none;object-fit:contain}
         .modelStripItem div{min-width:0}
         .modelStripItem strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#27292d;font-size:15px;font-weight:500;line-height:1.25;letter-spacing:-.01em}
         .modelStripItem span{display:block;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#92969c;font-size:13px;line-height:1.2}
         .modelStripDots{display:none}
         @keyframes modelStripMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-        @media(max-width:1200px){.modelStripInner{padding:0 80px}}
+        @media(max-width:1200px){.modelStripInner{padding:0 56px}}
         @media(max-width:1100px){.compactHero h1.display{font-size:clamp(44px,6.3vw,68px)!important}.compactHero:not(.compactHero-en) h1.display{font-size:clamp(38px,5.2vw,58px)!important}.modelStripItem{gap:10px}.modelStripItem strong{font-size:13px}.modelStripItem span{font-size:11px}}
-        @media(max-width:700px){.compactHero{min-height:auto!important}.compactHero .heroGrid{padding:78px 20px 68px!important}.compactHero h1.display{font-size:clamp(38px,10.5vw,58px)!important;line-height:1.08!important}.compactHero:not(.compactHero-en) h1.display{max-width:100%!important;font-size:clamp(32px,9.4vw,48px)!important;letter-spacing:-.035em!important}.compactHero .hero-title-lead{gap:10px}.compactHero .hero-title-mark{width:34px;height:34px}.compactHero .hero-title-phrase{margin-top:12px;white-space:normal}.compactHero .sub{font-size:15px!important;max-width:100%!important;overflow-wrap:anywhere}.compactHero .hero-sub-break{display:none}.compactHero .heroCtas{width:100%;flex-direction:column;margin-top:32px!important}.compactHero .heroCtas .btn{width:100%;font-size:15px!important}.modelStripInner{padding:0 20px}.modelStripTrack{animation-duration:28s;touch-action:pan-x}.modelStripItem{width:220px}.modelStripItem strong{font-size:13px}}
-        @media(prefers-reduced-motion:reduce){.modelStripTrack{animation:none}}
+        @media(max-width:700px){.compactHero{min-height:auto!important}.compactHero .heroGrid{padding:78px var(--fk-site-gutter) 68px!important}.compactHero h1.display{font-size:clamp(38px,10.5vw,58px)!important;line-height:1.08!important}.compactHero:not(.compactHero-en) h1.display{max-width:100%!important;font-size:clamp(32px,9.4vw,48px)!important;letter-spacing:-.035em!important}.compactHero .hero-title-lead{gap:10px}.compactHero .hero-title-mark{width:34px;height:34px}.compactHero .hero-title-phrase{margin-top:12px;white-space:normal}.compactHero .sub{font-size:15px!important;max-width:100%!important;overflow-wrap:anywhere}.compactHero .hero-sub-break{display:none}.compactHero .heroCtas{width:100%;flex-direction:column;margin-top:32px!important}.compactHero .heroCtas .btn{width:100%;font-size:15px!important}.modelStripInner{padding:0 24px}.modelStripTrack{animation-duration:28s;touch-action:pan-x}.modelStripItem{width:228px}.modelStripItem strong{font-size:13px}}
+        @media(prefers-reduced-motion:reduce){.modelStripTrack{animation:none}.modelStripViewport{overflow-x:auto}.modelStripSetClone{display:none}}
         .intelligence-section{background:#fff;padding:92px var(--fk-site-gutter) 100px;border-bottom:1px solid #eeeaf6}
         .tools-intro{display:none!important}
         .intelligence-wrap{max-width:1408px;margin:0 auto}
