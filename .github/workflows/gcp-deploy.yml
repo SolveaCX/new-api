@@ -44,11 +44,11 @@ env:
   VIDEO_RESULT_SIGNED_URL_TTL_SECONDS: '900'
   VIDEO_RESULT_FETCH_TIMEOUT_SECONDS: '1800'
   VIDEO_RESULT_MAX_BYTES: '524288000'
-  SESSION_CAPTURE_ENABLED: 'false'
+  SESSION_CAPTURE_ENABLED: 'true'
   GCP_PROJECT: ${{ vars.GCP_PROJECT_ID }}
   PUBSUB_TOPIC: flatkey-sessions
   GCS_STAGING: flatkey-session-staging-vocai-prod
-  SESSION_CAPTURE_GROUP: 'plg'
+  SESSION_CAPTURE_USER_ID: '8309'
 
 jobs:
   build:
@@ -231,7 +231,7 @@ jobs:
               env_vars+=("${name}=${value}")
             fi
           done
-          env_vars+=("SESSION_CAPTURE_GROUP=${SESSION_CAPTURE_GROUP:-plg}")
+          env_vars+=("SESSION_CAPTURE_USER_ID=${SESSION_CAPTURE_USER_ID:-}")
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,
@@ -424,7 +424,7 @@ jobs:
               env_vars+=("${name}=${value}")
             fi
           done
-          env_vars+=("SESSION_CAPTURE_GROUP=${SESSION_CAPTURE_GROUP:-plg}")
+          env_vars+=("SESSION_CAPTURE_USER_ID=${SESSION_CAPTURE_USER_ID:-}")
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,

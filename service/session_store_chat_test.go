@@ -29,10 +29,10 @@ func chatCaptureStream() string {
 }
 
 func TestSessionStoreChatCompletionLocalHTTP(t *testing.T) {
-	originalEnabled, originalUser, originalPublish := sessionCaptureEnabled, sessionCaptureAllowedGroup, sessionCapturePublish
-	sessionCaptureEnabled, sessionCaptureAllowedGroup = true, "plg"
+	originalEnabled, originalUser, originalPublish := sessionCaptureEnabled, sessionCaptureAllowedUser, sessionCapturePublish
+	sessionCaptureEnabled, sessionCaptureAllowedUser = true, nil
 	t.Cleanup(func() {
-		sessionCaptureEnabled, sessionCaptureAllowedGroup, sessionCapturePublish = originalEnabled, originalUser, originalPublish
+		sessionCaptureEnabled, sessionCaptureAllowedUser, sessionCapturePublish = originalEnabled, originalUser, originalPublish
 	})
 	for _, tc := range []struct {
 		name, response, status string
@@ -50,7 +50,7 @@ func TestSessionStoreChatCompletionLocalHTTP(t *testing.T) {
 			sessionCapturePublish = func(meta sessioncapture.Meta, body []byte) { published <- capture{meta, body} }
 			router := gin.New()
 			router.POST("/v1/chat/completions", func(c *gin.Context) {
-				if !SessionStoreCaptureEnabledForRequest(c.Request.Method, c.Request.URL.Path, "claude-sonnet-4-5", "plg") {
+				if !SessionStoreCaptureEnabledForRequest(c.Request.Method, c.Request.URL.Path, "claude-sonnet-4-5", 42) {
 					c.AbortWithStatus(http.StatusForbidden)
 					return
 				}
