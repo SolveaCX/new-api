@@ -1,7 +1,10 @@
 import { SiteShell } from "@/components/site-shell";
 import { ComputeDemandBoard } from "@/components/compute-demand-board";
+import { ComputePoolStrip } from "@/components/compute-pool-strip";
+import { ComputeQuickRequest } from "@/components/compute-quick-request";
+import { fallbackPools, fetchDemandPools } from "@/lib/compute-pools";
 import { type Locale } from "@/lib/locales";
-import { consoleUrl } from "@/lib/origins";
+import { consoleUrl, ROUTER_ORIGIN } from "@/lib/origins";
 import { DEMAND_INDEX, generateDemandSnapshot } from "@/lib/compute-demand";
 import { getComputeMarketCopy } from "@/lib/compute-market-copy";
 import { staticFeaturePages } from "@/lib/static-feature-pages";
@@ -10,9 +13,11 @@ export const COMPUTE_MARKET_POST_URL = consoleUrl("/compute/market", "?tab=post"
 export const COMPUTE_MARKET_SUPPLY_URL = consoleUrl("/compute/market", "?tab=supply");
 export const COMPUTE_MARKET_SUPPLIER_URL = consoleUrl("/compute/market", "?tab=supplier");
 
-export function ComputeMarketPage({ locale }: { locale: Locale }) {
+export async function ComputeMarketPage({ locale }: { locale: Locale }) {
   const copy = getComputeMarketCopy(locale);
   const rows = generateDemandSnapshot(40, 7);
+  const livePools = await fetchDemandPools(ROUTER_ORIGIN);
+  const pools = livePools && livePools.length > 0 ? livePools : fallbackPools();
   return (
     <SiteShell locale={locale} pathname={staticFeaturePages.compute.pathname}>
       <main className="cm-page">
@@ -20,8 +25,12 @@ export function ComputeMarketPage({ locale }: { locale: Locale }) {
           <p className="cm-kick">{copy.kicker}</p>
           <h1>{copy.title}</h1>
           <p className="cm-sub">{copy.subtitle}</p>
+          <div className="cm-hero-grid" id="post">
+            <ComputeQuickRequest copy={copy.quick} source="website-compute" />
+            <ComputePoolStrip pools={pools} copy={copy.pools} compact />
+          </div>
           <div className="cm-ctas">
-            <a className="cm-btn cm-btn-dark" href={COMPUTE_MARKET_POST_URL}>
+            <a className="cm-btn cm-btn-light" href={COMPUTE_MARKET_POST_URL}>
               {copy.ctaPost}
             </a>
             <a className="cm-btn cm-btn-light" href={COMPUTE_MARKET_SUPPLIER_URL}>
@@ -42,7 +51,10 @@ export function ComputeMarketPage({ locale }: { locale: Locale }) {
         </section>
         <section className="cm-main">
           <div>
-            <h2 className="cm-h2">{copy.boardTitle}</h2>
+            <ComputePoolStrip pools={pools} copy={copy.pools} />
+            <h2 className="cm-h2" style={{ marginTop: 28 }}>
+              {copy.boardTitle}
+            </h2>
             <ComputeDemandBoard
               rows={rows}
               variant="table"

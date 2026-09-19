@@ -1,5 +1,7 @@
 import type { Locale } from "@/lib/locales";
 import type { DemandBoardCopy } from "@/components/compute-demand-board";
+import type { QuickRequestCopy } from "@/components/compute-quick-request";
+import type { PoolStripCopy } from "@/components/compute-pool-strip";
 
 export type ComputeMarketCopy = {
   metaTitle: string;
@@ -21,6 +23,8 @@ export type ComputeMarketCopy = {
   why: string[];
   footNote: string;
   board: DemandBoardCopy;
+  quick: QuickRequestCopy;
+  pools: PoolStripCopy;
   home: {
     kicker: string;
     title: string;
@@ -31,6 +35,7 @@ export type ComputeMarketCopy = {
     statMatched: string;
     ctaAll: string;
     ctaSupply: string;
+    ctaQuick: string;
     note: string;
   };
 };
@@ -89,6 +94,46 @@ const en: ComputeMarketCopy = {
     allLabel: "Open the full marketplace in the console →",
     featured: "Featured",
   },
+  quick: {
+    title: "Post your GPU need in 3 seconds",
+    hint: "No account. Three fields. Your request joins the pool for that GPU and flatkey negotiates one large order for everyone.",
+    pasteLabel: "Or paste a sentence and we fill it in",
+    pastePlaceholder: "e.g. need 16 H200 for 6 months, US West, start October",
+    gpuLabel: "GPU",
+    gpusLabel: "GPUs",
+    termLabel: "Term",
+    termUnit: "mo",
+    contactLabel: "Where should we reach you?",
+    contactPlaceholder: "email, phone or WeChat",
+    contactNote: "Seen only by flatkey. Never shown to suppliers.",
+    submit: "Join the pool →",
+    submitting: "Submitting…",
+    refBanner: "Invited by #{code} · you both get flatkey credits when the pool closes",
+    doneTitle: "You're in the pool.",
+    doneBody: "We'll reach out within one business day with the pooled price. Bring peers in and the whole pool moves down a tier.",
+    poolLine: "{gpu} pool: {gpus} GPUs from {n} requests",
+    poolNext: "{need} more GPUs unlock the next tier (~{pct}% under on-demand)",
+    poolTop: "Top tier reached (~{pct}% under on-demand)",
+    shareTitle: "Grow your pool",
+    shareBody: "Everyone who joins through your link adds to your pool. Each referral earns you both $50 in flatkey credits once the pool closes.",
+    shareCopy: "Copy link",
+    shareCopied: "Copied ✓",
+    shareX: "Share on X",
+    shareText: "Pooling {gpu} demand on flatkey ({gpus} GPUs so far). Add yours and we all get a lower price: {url}",
+    referrals: "{n} joined through your link",
+    another: "Post another request",
+    error: "Could not submit right now. Please try again or email support@flatkey.ai.",
+  },
+  pools: {
+    title: "Demand pools right now",
+    body: "Small orders pooled per GPU. Every tier the pool crosses lowers the price for everyone in it.",
+    pooled: "GPUs pooled",
+    requests: "{n} requests",
+    next: "{need} to next tier",
+    top: "top tier",
+    tierLabel: "~{pct}% off",
+    pooling: "pooling",
+  },
   home: {
     kicker: "COMPUTE · LIVE DEMAND BOARD",
     title: "Models, tools — and the GPUs behind them.",
@@ -98,6 +143,7 @@ const en: ComputeMarketCopy = {
     statBids: "supplier bids · 24h",
     statMatched: "matched this week",
     ctaAll: "See all requests →",
+    ctaQuick: "Post a need in 3 seconds",
     ctaSupply: "I have GPUs, take orders",
     note: "Nicknames are anonymous · full details after you join",
   },
@@ -150,6 +196,46 @@ const zh: ComputeMarketCopy = {
     allLabel: "在控制台查看全部需求 →",
     featured: "精选",
   },
+  quick: {
+    title: "3 秒发布你的 GPU 需求",
+    hint: "不用注册，三个字段。你的需求会进入该型号的拼单池，flatkey 把小单凑成大单去谈价。",
+    pasteLabel: "或者粘贴一句话，我们自动填",
+    pastePlaceholder: "例如：要 16 张 H200，租 6 个月，美西，10 月开始",
+    gpuLabel: "GPU 型号",
+    gpusLabel: "卡数",
+    termLabel: "租期",
+    termUnit: "个月",
+    contactLabel: "怎么联系你？",
+    contactPlaceholder: "邮箱 / 手机 / 微信",
+    contactNote: "只有 flatkey 能看到，绝不展示给供给方。",
+    submit: "加入拼单 →",
+    submitting: "提交中…",
+    refBanner: "由 #{code} 邀请 · 拼单成交后你们两人都获得 flatkey 额度",
+    doneTitle: "已进入拼单池。",
+    doneBody: "一个工作日内我们会带着拼单价联系你。拉同行进来，整个池子一起降一档。",
+    poolLine: "{gpu} 拼单池：{n} 个需求，共 {gpus} 张",
+    poolNext: "再凑 {need} 张进入下一档（约低于按需价 {pct}%）",
+    poolTop: "已到最高档（约低于按需价 {pct}%）",
+    shareTitle: "把池子做大",
+    shareBody: "通过你的链接加入的需求都算进你的池子。每成功邀请一位，拼单成交后你们双方各得 $50 flatkey 额度。",
+    shareCopy: "复制链接",
+    shareCopied: "已复制 ✓",
+    shareX: "分享到 X",
+    shareText: "我在 flatkey 拼 {gpu} 算力（已凑 {gpus} 张），加进来一起拿更低的价：{url}",
+    referrals: "已有 {n} 人通过你的链接加入",
+    another: "再发一条需求",
+    error: "暂时无法提交，请重试或发邮件到 support@flatkey.ai。",
+  },
+  pools: {
+    title: "正在拼的算力池",
+    body: "按 GPU 型号把小单凑成大单。池子每跨过一档，池内所有人的价格一起降。",
+    pooled: "张已凑",
+    requests: "{n} 个需求",
+    next: "再凑 {need} 张升档",
+    top: "最高档",
+    tierLabel: "约省 {pct}%",
+    pooling: "拼单中",
+  },
   home: {
     kicker: "COMPUTE · 实时需求板",
     title: "模型、工具，以及它们背后的 GPU。",
@@ -159,6 +245,7 @@ const zh: ComputeMarketCopy = {
     statBids: "供给方报价 · 24h",
     statMatched: "本周已撮合",
     ctaAll: "查看全部需求 →",
+    ctaQuick: "3 秒发需求",
     ctaSupply: "我有 GPU，想接单",
     note: "昵称均为匿名，加入平台后可见正式信息",
   },

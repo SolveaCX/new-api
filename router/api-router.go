@@ -503,12 +503,21 @@ func SetApiRouter(router *gin.Engine) {
 			computeMarketRoute.GET("/supplier", controller.GetMyComputeSupplier)
 			computeMarketRoute.POST("/supplier", controller.UpsertMyComputeSupplier)
 		}
+		// Public demand intake (no account): website "post your need in 3 seconds".
+		computeDemandRoute := apiRouter.Group("/compute/market/public")
+		computeDemandRoute.Use(middleware.CriticalRateLimit())
+		{
+			computeDemandRoute.POST("/leads", controller.CreateComputeDemandLead)
+			computeDemandRoute.GET("/leads/:code", controller.GetComputeDemandLeadStatus)
+			computeDemandRoute.GET("/pools", controller.GetComputeDemandPools)
+		}
 		computeMarketAdminRoute := apiRouter.Group("/compute/market/admin")
 		computeMarketAdminRoute.Use(middleware.AdminAuth())
 		{
 			computeMarketAdminRoute.GET("/suppliers", controller.ListComputeSuppliers)
 			computeMarketAdminRoute.POST("/suppliers/:user_id/level", controller.SetComputeSupplierLevel)
 			computeMarketAdminRoute.POST("/rfqs/:id/featured", controller.SetComputeRFQFeatured)
+			computeMarketAdminRoute.GET("/leads", controller.ListComputeDemandLeads)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

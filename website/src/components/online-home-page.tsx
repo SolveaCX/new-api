@@ -1556,7 +1556,10 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
             seed={7}
           />
           <div className="cm-ctas">
-            <a className="cm-btn cm-btn-dark" href={localizePath("/compute", props.locale)}>
+            <a className="cm-btn cm-btn-dark" href={localizePath("/compute", props.locale) + "#post"}>
+              {cm.home.ctaQuick}
+            </a>
+            <a className="cm-btn cm-btn-light" href={localizePath("/compute", props.locale)}>
               {cm.home.ctaAll}
             </a>
             <a className="cm-btn cm-btn-light" href={COMPUTE_MARKET_SUPPLIER_URL}>
