@@ -18,11 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useAuthStore } from '@/stores/auth-store'
-import { getUserModels } from '@/lib/api'
+import { useModelAccess } from '@/features/available-models/hooks/use-model-access'
+import { getCatalogTokenModels } from '@/features/available-models/lib/catalog-token-models'
+import { sortModelsByPromotion } from '@/features/available-models/lib/model-promotions'
 import { getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
-import { getPricing } from '@/features/pricing/api'
 import { useApiInfo } from '../../hooks/use-status-data'
 import { IntegrationCards } from './integration-cards'
 import { IntegrationDialog } from './integration-dialog'
@@ -101,7 +101,6 @@ export type OverviewDashboardProps = {
 export function OverviewDashboard({
   handoffModel,
 }: OverviewDashboardProps = {}) {
-  const user = useAuthStore((state) => state.auth.user)
   const { status } = useApiInfo()
   const [openIntegration, setOpenIntegration] = useState<IntegrationId | null>(
     null
@@ -160,35 +159,22 @@ export function OverviewDashboard({
     keyResolutionEnabled
   )
 
-  // Scope the model list to the group the selected key actually routes with,
-  // so the example only offers models this key can call.
-  const modelGroup = selectedKey?.group?.trim() || user?.group || ''
+  const modelAccessQuery = useModelAccess(
+    openIntegration !== null,
+    'available_models'
+  )
+  const catalogModels = useMemo(() => {
+    if (!modelAccessQuery.data) return []
+    return getCatalogTokenModels(modelAccessQuery.data, selectedKey)
+  }, [modelAccessQuery.data, selectedKey])
 
-  const modelsQuery = useQuery({
-    queryKey: ['dashboard', 'overview', 'user-models', modelGroup],
-    queryFn: async () => {
-      const result = await getUserModels(modelGroup || undefined)
-      return result.success ? (result.data ?? []) : []
-    },
-    staleTime: 5 * 60 * 1000,
-    enabled: openIntegration !== null,
-  })
-
-  // Shares the pricing page's query cache; only used to read endpoint tags.
-  const pricingQuery = useQuery({
-    queryKey: ['pricing'],
-    queryFn: getPricing,
-    staleTime: 5 * 60 * 1000,
-    enabled: openIntegration !== null,
-  })
-
-  const modelEndpointTags = useMemo(() => {
-    const tags = new Map<string, string[]>()
-    for (const row of pricingQuery.data?.data ?? []) {
-      tags.set(row.model_name, row.supported_endpoint_types ?? [])
-    }
-    return tags
-  }, [pricingQuery.data])
+  const modelEndpointTags = useMemo(
+    () =>
+      new Map(
+        catalogModels.map((model) => [model.id, model.supported_endpoint_types])
+      ),
+    [catalogModels]
+  )
 
   const classifyModel = useCallback(
     (model: string): SnippetKind | null => {
@@ -233,14 +219,14 @@ export function OverviewDashboard({
   )
 
   const availableModels = useMemo(() => {
-    const models = modelsQuery.data ?? []
+    const models = catalogModels.map((model) => model.id)
     // No fallback to the raw list: untagged models already classify as chat,
     // so an empty result means every model is genuinely non-demoable
     // (video-to-music and the like). The picker goes empty and the sample
     // falls back to the safe default model instead of demoing a real model
     // against the wrong endpoint.
     return models.filter((model) => classifyModel(model) !== null)
-  }, [classifyModel, modelsQuery.data])
+  }, [classifyModel, catalogModels])
 
   const exampleModel = useMemo(() => {
     const fallbackModel = pickDefaultModel(availableModels)
@@ -277,7 +263,12 @@ export function OverviewDashboard({
         loadingKeys={loadingKeys}
         resolveKey={resolveKey}
         onSelectKey={setSelectedKeyId}
-        models={availableModels}
+        models={sortModelsByPromotion(catalogModels)
+          .map((model) => model.id)
+          .filter((id) => availableModels.includes(id))}
+        modelTags={Object.fromEntries(
+          catalogModels.map((model) => [model.id, model.tags ?? ''])
+        )}
         selectedModel={exampleModel}
         onSelectModel={setSelectedModel}
         snippetContext={snippetContext}

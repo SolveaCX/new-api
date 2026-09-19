@@ -10,13 +10,18 @@ const PROMOTION_PRIORITY: Record<ModelPromotion, number> = {
   new: 3,
 }
 
-export function getModelPromotions(_modelId: string, tags = ''): ModelPromotion[] {
+export function getModelPromotions(
+  _modelId: string,
+  tags = ''
+): ModelPromotion[] {
   const normalized = tags.split(',').map((tag) => tag.trim().toLowerCase())
   const promotions: ModelPromotion[] = []
   if (normalized.includes('free')) promotions.push('free')
-  if (normalized.some((tag) => tag === 'limited' || tag === 'limited discount')) promotions.push('limited')
+  if (normalized.some((tag) => tag === 'limited' || tag === 'limited discount'))
+    promotions.push('limited')
   if (normalized.includes('hot')) promotions.push('hot')
-  if (normalized.some((tag) => tag === 'new' || tag === 'new release')) promotions.push('new')
+  if (normalized.some((tag) => tag === 'new' || tag === 'new release'))
+    promotions.push('new')
   return promotions
 }
 
@@ -52,11 +57,23 @@ export function sortModelsByPromotion(
       const bTagged = Boolean(b.model.tags?.trim())
       return (
         Number(bTagged) - Number(aTagged) ||
-        (bTagged ? b.model.display_weight ?? 0 : 0) -
-          (aTagged ? a.model.display_weight ?? 0 : 0) ||
+        (bTagged ? (b.model.display_weight ?? 0) : 0) -
+          (aTagged ? (a.model.display_weight ?? 0) : 0) ||
         a.priority - b.priority ||
         a.index - b.index
       )
     })
     .map(({ model }) => model)
+}
+
+/** Custom administrator labels are content, not inferred promotions. */
+export function getCustomModelTags(tags = ''): string[] {
+  return [
+    ...new Set(
+      tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    ),
+  ].filter((tag) => getModelPromotions('', tag).length === 0)
 }

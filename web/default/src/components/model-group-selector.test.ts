@@ -57,3 +57,24 @@ describe('sortModelOptionsForSearch', () => {
     ).toEqual(['new', 'alpha', 'zeta'])
   })
 })
+
+test('metadata weights survive both dropdown sorting paths', () => {
+  const models = [
+    {
+      label: 'free',
+      value: 'free',
+      tags: 'Free',
+      promotions: ['free'] as const as ['free'],
+      displayWeight: 1,
+    },
+    { label: 'custom', value: 'custom', tags: 'Featured', displayWeight: 20 },
+    { label: 'plain', value: 'plain', displayWeight: 100 },
+  ]
+  for (const sort of [sortModelOptionsForDefault, sortModelOptionsForSearch]) {
+    expect(sort(models).map((m) => m.value)).toEqual([
+      'custom',
+      'free',
+      'plain',
+    ])
+  }
+})

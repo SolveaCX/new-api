@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { getUserModelAccess } from '@/features/available-models/api'
+import { getModelAccessScopeModels } from '@/features/available-models/lib/model-access-browser'
 import { API_ENDPOINTS, PLAYGROUND_RECORDS_EXPORT } from './constants'
 import type { MediaGenerationRequest } from './lib/media-generation'
 import type { PlaygroundConversationSnapshot } from './lib/playground-persistence'
@@ -362,28 +364,14 @@ export async function downloadPlaygroundRecords(): Promise<PlaygroundRecordExpor
   }
 }
 
-/**
- * Get models available to the user for Playground display. The opt-in flag
- * applies the administrator's hidden-model policy without changing the default
- * behavior of the shared backend endpoint.
- */
+/** Load the same visible, healthy catalog as the Available Models page. */
+export async function getPlaygroundModelCatalog(group?: string) {
+  const access = await getUserModelAccess('available_models')
+  return getModelAccessScopeModels(access, group)
+}
+
 export async function getUserModels(group?: string): Promise<string[]> {
-  const res = await api.get(API_ENDPOINTS.USER_MODELS, {
-    params: {
-      ...(group ? { group } : {}),
-      exclude_hidden: true,
-    },
-  })
-  const { data } = res
-
-  if (!data.success || !Array.isArray(data.data)) {
-    return []
-  }
-
-  return data.data
-    .filter((model: unknown): model is string => typeof model === 'string')
-    .map((model: string) => model.trim())
-    .filter(Boolean)
+  return (await getPlaygroundModelCatalog(group)).map((model) => model.id)
 }
 
 export type PlaygroundModelPricing = {

@@ -43,7 +43,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { getModelPromotionLabel } from '@/features/available-models/lib/model-promotions'
+import {
+  getCustomModelTags,
+  getModelPromotionLabel,
+} from '@/features/available-models/lib/model-promotions'
 import {
   sortModelOptionsForDefault,
   sortModelOptionsForSearch,
@@ -300,6 +303,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
                               )}
                             >
                               {getModelPromotionLabel(promotion, t)}
+                            </Badge>
+                          ))}
+                          {getCustomModelTags(model.tags).map((tag) => (
+                            <Badge key={tag} variant='outline'>
+                              {tag}
                             </Badge>
                           ))}
                         </div>

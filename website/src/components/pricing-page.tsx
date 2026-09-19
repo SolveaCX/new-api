@@ -1,9 +1,9 @@
+import { headers } from "next/headers";
 import { ArrowRight, Ban, Boxes, CheckCircle2, Code2, DollarSign, Gauge, KeyRound, Mail, Wallet } from "lucide-react";
 import { withIdFallback } from "@/lib/locales";
 import { SiteShell } from "@/components/site-shell";
 import { PricingPlansGrid } from "@/components/pricing-plans-grid";
 import {
-  getPricingData,
   getVendorName,
   getAvailableGroups,
   buildEffectiveGroupRatio,
@@ -14,6 +14,7 @@ import {
   type PricingVendor,
   type PricingSearch,
 } from "@/lib/pricing";
+import { getAvailableModelPricingData } from "@/lib/available-models";
 import { ModelsDirectory } from "@/components/models-directory";
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
 import { buildRowsForModels } from "@/lib/home-models";
@@ -951,7 +952,7 @@ export async function PricingPage(props: PricingPageProps) {
 }
 
 export async function ModelsPage(props: PricingPageProps) {
-  const pricing = await getPricingData(MODELS_PAGE_PRICING_GROUP);
+  const pricing = await getAvailableModelPricingData((await headers()).get("cookie") ?? "");
   const allModels = enrichVendorNames(pricing.models, pricing.vendors, pricing.groupRatio, pricing.groupModelRatio, pricing.usableGroup);
   const copy = pricingCopy(props.locale);
 

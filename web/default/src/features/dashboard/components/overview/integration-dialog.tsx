@@ -20,6 +20,7 @@ import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { OFFICIAL_WEBSITE_ORIGIN } from '@/lib/origins'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,11 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CopyButton } from '@/components/copy-button'
+import {
+  getCustomModelTags,
+  getModelPromotions,
+  getModelPromotionLabel,
+} from '@/features/available-models/lib/model-promotions'
 import type { ApiKey } from '@/features/keys/types'
 import { ApiKeyPicker } from './api-key-picker'
 import { useIntegrationCards } from './integration-cards'
@@ -101,6 +107,7 @@ function StepHint(props: { children: string }) {
 
 function ModelSelect(props: {
   models: string[]
+  modelTags?: Record<string, string>
   value: string
   onChange: (model: string) => void
 }) {
@@ -136,7 +143,21 @@ function ModelSelect(props: {
           <SelectGroup>
             {props.models.map((model) => (
               <SelectItem key={model} value={model}>
-                {model}
+                <span className='flex flex-wrap items-center gap-1.5'>
+                  <span>{model}</span>
+                  {getModelPromotions(model, props.modelTags?.[model]).map(
+                    (promotion) => (
+                      <Badge key={promotion} variant='outline'>
+                        {getModelPromotionLabel(promotion, t)}
+                      </Badge>
+                    )
+                  )}
+                  {getCustomModelTags(props.modelTags?.[model]).map((tag) => (
+                    <Badge key={tag} variant='outline'>
+                      {tag}
+                    </Badge>
+                  ))}
+                </span>
               </SelectItem>
             ))}
           </SelectGroup>
@@ -157,6 +178,7 @@ export interface IntegrationDialogProps {
   resolveKey: (id: number) => Promise<string | null>
   onSelectKey: (keyId: number) => void
   models: string[]
+  modelTags?: Record<string, string>
   selectedModel: string
   onSelectModel: (model: string) => void
   snippetContext: SnippetContext
@@ -278,6 +300,7 @@ export function IntegrationDialog(props: IntegrationDialogProps) {
                 </Tabs>
                 <ModelSelect
                   models={props.models}
+                  modelTags={props.modelTags}
                   value={props.selectedModel}
                   onChange={props.onSelectModel}
                 />
@@ -307,6 +330,7 @@ export function IntegrationDialog(props: IntegrationDialogProps) {
                 </Tabs>
                 <ModelSelect
                   models={props.models}
+                  modelTags={props.modelTags}
                   value={props.selectedModel}
                   onChange={props.onSelectModel}
                 />
