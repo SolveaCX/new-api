@@ -13,6 +13,17 @@ func TestDataToolWhitelabelIDsRoundTrip(t *testing.T) {
 	if got := UpstreamDataToolID("flatkey.audio.speech"); got != "blockrun.audio.speech" {
 		t.Fatalf("upstream id = %q", got)
 	}
+	gateway := "gateway:monid:blockrun.ai:/api/v1/exa/answer"
+	public := PublicDataToolID(gateway)
+	if strings.Contains(strings.ToLower(public), "blockrun") || public != "gateway:monid:flatkey.ai:/api/v1/exa/answer" {
+		t.Fatalf("gateway public id = %q", public)
+	}
+	if c := UpstreamDataToolIDCandidates(public); len(c) != 2 || c[0] != gateway || c[1] != public {
+		t.Fatalf("gateway candidates = %v", c)
+	}
+	if c := UpstreamDataToolIDCandidates("apify.actor.run"); len(c) != 1 {
+		t.Fatalf("plain id candidates = %v", c)
+	}
 	for _, id := range []string{"apify.actor.run", "native.search", ""} {
 		if PublicDataToolID(id) != id || UpstreamDataToolID(id) != id {
 			t.Fatalf("non-vendor id %q must pass through", id)

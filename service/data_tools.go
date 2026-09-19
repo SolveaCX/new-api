@@ -81,7 +81,7 @@ func ExecuteDataTool(
 	input map[string]any,
 ) (*DataToolRunResult, error) {
 	clientIdempotencyKey = strings.TrimSpace(clientIdempotencyKey)
-	toolID = UpstreamDataToolID(toolID)
+	toolID = strings.TrimSpace(toolID)
 	if billing.UserID <= 0 || clientIdempotencyKey == "" || toolID == "" {
 		return nil, errors.New("user, idempotency key and tool id are required")
 	}
@@ -105,10 +105,11 @@ func ExecuteDataTool(
 		input = map[string]any{}
 	}
 
-	inspection, err := InspectDataTool(ctx, toolID)
+	upstreamToolID, inspection, err := inspectDataToolResolved(ctx, toolID)
 	if err != nil {
 		return nil, err
 	}
+	toolID = upstreamToolID
 	priceUSD := dataToolPriceUSD(inspection.Pricing, input)
 	priceMicroUSD, quota, err := dataToolPriceToQuota(priceUSD)
 	if err != nil {

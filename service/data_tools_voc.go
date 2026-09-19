@@ -300,26 +300,39 @@ func ListDataTools(
 }
 
 func InspectDataTool(ctx context.Context, toolID string) (*DataToolInspection, error) {
+	_, inspection, err := inspectDataToolResolved(ctx, toolID)
+	return inspection, err
+}
+
+// inspectDataToolResolved inspects a client-facing tool id, trying each
+// upstream candidate in turn, and returns the upstream id that answered
+// alongside the whitelabelled inspection.
+func inspectDataToolResolved(ctx context.Context, toolID string) (string, *DataToolInspection, error) {
 	url, _, err := dataToolsMCPConfig()
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	toolID = UpstreamDataToolID(toolID)
-	if directDataToolsEnabled(url) {
-		inspection, err := inspectDirectDataTool(ctx, toolID)
-		if err != nil {
-			return nil, err
+	direct := directDataToolsEnabled(url)
+	var lastErr error
+	for _, candidate := range UpstreamDataToolIDCandidates(toolID) {
+		var inspection *DataToolInspection
+		if direct {
+			inspection, err = inspectDirectDataTool(ctx, candidate)
+		} else {
+			var result DataToolInspection
+			err = callDataToolsMCP(ctx, "inspect", map[string]any{"id": candidate}, "", &result)
+			if err == nil {
+				result.FlatkeyPriceUSD = DataToolCatalogPriceUSD(result.Pricing)
+				inspection = &result
+			}
 		}
-		whitelabelDataToolInspection(inspection)
-		return inspection, nil
+		if err == nil {
+			whitelabelDataToolInspection(inspection)
+			return candidate, inspection, nil
+		}
+		lastErr = err
 	}
-	var result DataToolInspection
-	if err := callDataToolsMCP(ctx, "inspect", map[string]any{"id": toolID}, "", &result); err != nil {
-		return nil, err
-	}
-	result.FlatkeyPriceUSD = DataToolCatalogPriceUSD(result.Pricing)
-	whitelabelDataToolInspection(&result)
-	return &result, nil
+	return "", nil, lastErr
 }
 
 type vocDataToolRunResult struct {
