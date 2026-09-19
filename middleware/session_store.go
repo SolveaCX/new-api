@@ -59,8 +59,8 @@ func (w *sessionStoreResponseWriter) snapshot() ([]byte, bool) {
 func SessionStoreCapture() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		model := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
-		userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
-		if c.Request == nil || !service.SessionStoreCaptureEnabledForRequest(c.Request.Method, c.Request.URL.Path, model, userID) {
+		userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+		if c.Request == nil || !service.SessionStoreCaptureEnabledForRequest(c.Request.Method, c.Request.URL.Path, model, userGroup) {
 			c.Next()
 			return
 		}

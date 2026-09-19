@@ -24,10 +24,10 @@ import (
 const sessionStoreMaxBodyBytes = 10 * 1024 * 1024
 
 var (
-	sessionCaptureEnabled     = sessioncapture.Enabled()
-	sessionCaptureTenantID    = sessionStoreEnvOrDefault("SESSION_CAPTURE_TENANT_ID", "flatkey")
-	sessionCaptureAllowedUser = sessionStoreOptionalUserID("SESSION_CAPTURE_USER_ID")
-	sessionCapturePublish     = sessioncapture.Capture
+	sessionCaptureEnabled      = sessioncapture.Enabled()
+	sessionCaptureTenantID     = sessionStoreEnvOrDefault("SESSION_CAPTURE_TENANT_ID", "flatkey")
+	sessionCaptureAllowedGroup = sessionStoreEnvOrDefault("SESSION_CAPTURE_GROUP", "plg")
+	sessionCapturePublish      = sessioncapture.Capture
 )
 
 var errSessionCaptureTruncated = errors.New("session capture body was truncated")
@@ -103,28 +103,15 @@ func sessionStoreEnvOrDefault(key string, fallback string) string {
 	return fallback
 }
 
-func sessionStoreOptionalUserID(key string) *int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return nil
-	}
-	userID, err := strconv.Atoi(value)
-	if err != nil || userID <= 0 {
-		invalidUserID := 0
-		return &invalidUserID
-	}
-	return &userID
-}
-
 // SessionStoreCaptureEnabledForRequest keeps the response-copying middleware
 // off unless the capture pipeline is enabled and the request uses Messages
 // or Chat Completions for a customer-selected Claude family.
-func SessionStoreCaptureEnabledForRequest(method string, path string, model string, userID int) bool {
+func SessionStoreCaptureEnabledForRequest(method string, path string, model string, userGroup string) bool {
 	if !sessionCaptureEnabled || method != http.MethodPost ||
 		(path != "/v1/messages" && path != "/v1/chat/completions") || !isClaudeSessionCaptureModel(model) {
 		return false
 	}
-	return sessionCaptureAllowedUser == nil || *sessionCaptureAllowedUser == userID
+	return strings.TrimSpace(userGroup) == sessionCaptureAllowedGroup
 }
 
 func isClaudeSessionCaptureModel(model string) bool {
