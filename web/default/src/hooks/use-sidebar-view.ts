@@ -29,6 +29,9 @@ import { useSidebarData } from './use-sidebar-data'
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
 
+/** Tools every signed-in user may see; the rest of the group is admin-only. */
+const REGULAR_USER_TOOLS = ['/api-marketplace', '/compute/market']
+
 export function filterToolsGroupByRole(
   navGroups: NavGroup[],
   userRole: number | undefined
@@ -41,7 +44,10 @@ export function filterToolsGroupByRole(
     return [
       {
         ...group,
-        items: group.items.filter((item) => item.url === '/api-marketplace'),
+        items: group.items.filter(
+          (item) =>
+            'url' in item && REGULAR_USER_TOOLS.includes(item.url as string)
+        ),
       },
     ]
   })
