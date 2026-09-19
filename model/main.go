@@ -446,6 +446,7 @@ func orderedMigrationModels() []migrationModel {
 		{&ComputeRFQ{}, "ComputeRFQ"},
 		{&ComputeBid{}, "ComputeBid"},
 		{&ComputeSupplier{}, "ComputeSupplier"},
+		{&ComputeDemandLead{}, "ComputeDemandLead"},
 		{&DataToolCall{}, "DataToolCall"},
 		{&BytePlusAssetGroup{}, "BytePlusAssetGroup"},
 		{&BytePlusAssetBindingGroup{}, "BytePlusAssetBindingGroup"},

@@ -8362,3 +8362,48 @@ html:has(.model-prototype) {
   .cm-ctas .cm-btn{width:100%}
   .cm-page,.cm-page *{max-width:100%}
 }
+
+/* compute quick request + demand pools */
+.cm-hero-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:18px;max-width:1080px;margin:28px auto 0;text-align:left;align-items:start}
+.cq{background:#fff;border-radius:16px;padding:22px;box-shadow:0 1px 0 #0b0b0f0a,0 12px 40px rgba(20,10,60,.08);border:1px solid #0b0b0f0d;scroll-margin-top:90px}
+.cq h3{font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px}
+.cq .cq-sub{font-size:13px;color:#5a5a66;line-height:1.5;margin:0 0 14px}
+.cq-ref{background:#eef8d8;color:#2f5a00;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:600;margin-bottom:12px}
+.cq-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;font-size:12px;font-weight:600;color:#43434c}
+.cq-field input,.cq-field select,.cq-field textarea{font:inherit;font-size:14px;font-weight:500;color:#0b0b0f;background:#fafafc;border:1px solid #0b0b0f1a;border-radius:9px;padding:9px 11px;width:100%;outline:none;min-width:0}
+.cq-field input:focus,.cq-field select:focus,.cq-field textarea:focus{border-color:#7c3aed;box-shadow:0 0 0 3px #7c3aed22;background:#fff}
+.cq-field textarea{resize:vertical;min-height:52px}
+.cq-field small{font-weight:500;color:#83838e;font-size:11px}
+.cq-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}
+.cq-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.cq-error{background:#fff1f0;color:#b42318;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:10px}
+.cq-submit{width:100%;height:48px;font-size:15px;border:0;cursor:pointer}
+.cq-submit:disabled{opacity:.45;cursor:not-allowed}
+.cq-done .cq-badge{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#0b0b0f;color:#c8ff4d;border-radius:6px;padding:3px 8px;margin-bottom:8px}
+.cq-pool{background:#fafafc;border-radius:12px;padding:14px;margin-bottom:14px}
+.cq-pool-line{font-weight:700;font-size:14px;margin-bottom:8px}
+.cq-bar{height:8px;border-radius:99px;background:#e9e9f0;overflow:hidden}
+.cq-bar i{display:block;height:100%;background:linear-gradient(90deg,#7c3aed,#c8ff4d);border-radius:99px;transition:width .6s ease}
+.cq-pool-next{font-size:12px;color:#5a5a66;margin-top:8px}
+.cq-share h4{font-size:15px;font-weight:800;margin:0 0 4px}
+.cq-share p{font-size:13px;color:#5a5a66;line-height:1.5;margin:0 0 10px}
+.cq-link{display:flex;gap:8px;align-items:stretch;margin-bottom:10px}
+.cq-link code{flex:1;min-width:0;display:flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#fafafc;border:1px dashed #0b0b0f33;border-radius:9px;padding:0 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cq-link .cm-btn{border:0;cursor:pointer;height:40px;padding:0 14px}
+.cq-share-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cq-share-row .cm-btn{height:40px;padding:0 14px}
+.cq-refs{font-size:12px;color:#5a5a66;font-weight:600}
+.cq-again{margin-top:14px;background:none;border:0;color:#7c3aed;font-weight:700;font-size:13px;cursor:pointer;padding:0}
+.cq-pools header{margin-bottom:12px}
+.cq-pools-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.cq-pools-compact .cq-pools-grid{grid-template-columns:1fr 1fr}
+.cq-pool-card{background:#fff;border:1px solid #0b0b0f0d;border-radius:14px;padding:14px;box-shadow:0 1px 0 #0b0b0f0a}
+.cq-pool-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.cq-pool-head b{font-size:15px;font-weight:800}
+.cq-tier{font-size:11px;font-weight:700;background:#eef8d8;color:#2f5a00;border-radius:99px;padding:2px 8px}
+.cq-tier-open{background:#eee9ff;color:#5b21b6}
+.cq-pool-num{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-bottom:8px}
+.cq-pool-num small{font-size:11px;font-weight:600;color:#83838e;letter-spacing:0}
+.cq-pool-foot{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#5a5a66;margin-top:8px;flex-wrap:wrap}
+@media (max-width:960px){.cm-hero-grid{grid-template-columns:1fr}.cq-pools-compact .cq-pools-grid{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.cq{padding:16px}.cq-grid{grid-template-columns:1fr 1fr}.cq-grid .cq-field:first-child{grid-column:1/-1}.cq-pools-compact .cq-pools-grid{grid-template-columns:1fr 1fr}.cq-link{flex-direction:column}.cq-link code{height:40px}}
