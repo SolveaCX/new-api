@@ -119,6 +119,7 @@ func TestShouldWhitelabelPlatform(t *testing.T) {
 		want     bool
 	}{
 		{"kuaizi (channel 58)", constant.TaskPlatform("58"), true},
+		{"doubao video (channel 54)", constant.TaskPlatform("54"), true},
 		{"jimeng proxy (channel 103)", constant.TaskPlatform("103"), true},
 		{"blockrun-video (channel 101)", constant.TaskPlatform("101"), true},
 		{"jimeng zhizinan (channel 104)", constant.TaskPlatform("104"), true},
@@ -140,6 +141,9 @@ func TestShouldWhitelabelPlatform(t *testing.T) {
 }
 
 func TestShouldWhitelabelChannelType(t *testing.T) {
+	if !ShouldWhitelabelChannelType(constant.ChannelTypeDoubaoVideo) {
+		t.Errorf("expected Doubao video channel type %d to be whitelabeled", constant.ChannelTypeDoubaoVideo)
+	}
 	if !ShouldWhitelabelChannelType(constant.ChannelTypeKuaiziLizhen) {
 		t.Errorf("expected kuaizi channel type %d to be whitelabeled", constant.ChannelTypeKuaiziLizhen)
 	}

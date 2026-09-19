@@ -16,7 +16,6 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,11 +62,7 @@ func TestExtractUpstreamVideoURL(t *testing.T) {
 	}
 }
 
-func TestConvertToOpenAIVideoSelectsPublicURLByChannelAndGroup(t *testing.T) {
-	originalServerAddress := system_setting.ServerAddress
-	t.Cleanup(func() { system_setting.ServerAddress = originalServerAddress })
-	system_setting.ServerAddress = "https://router.flatkey.ai"
-
+func TestConvertToOpenAIVideoUsesPersistedFlatkeyProxy(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		channelID int
@@ -75,18 +70,20 @@ func TestConvertToOpenAIVideoSelectsPublicURLByChannelAndGroup(t *testing.T) {
 		wantURL   string
 	}{
 		{name: "channel 106 plg uses proxy", channelID: 106, group: "plg", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
-		{name: "channel 106 other group uses upstream", channelID: 106, group: "default", wantURL: "https://cdn.volces.com/upstream.mp4"},
-		{name: "other Doubao channel uses upstream", channelID: 205, group: "plg", wantURL: "https://cdn.volces.com/upstream.mp4"},
+		{name: "channel 106 other group uses proxy", channelID: 106, group: "default", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
+		{name: "other Doubao channel uses proxy", channelID: 205, group: "plg", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
 		{name: "protected channel domestic uses proxy", channelID: 272, group: "Seedance Domestic", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
 		{name: "protected channel official uses proxy", channelID: 272, group: "Seedance2.0 Official", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			task := &model.Task{
-				TaskID:    "task_public",
-				ChannelId: tc.channelID,
-				Group:     tc.group,
-				Status:    model.TaskStatusSuccess,
-				Data:      []byte(`{"status":"succeeded","content":{"video_url":"https://cdn.volces.com/upstream.mp4"}}`),
+				TaskID:      "task_public",
+				Platform:    constant.TaskPlatform("54"),
+				ChannelId:   tc.channelID,
+				Group:       tc.group,
+				Status:      model.TaskStatusSuccess,
+				PrivateData: model.TaskPrivateData{ResultURL: tc.wantURL},
+				Data:        []byte(`{"status":"succeeded","content":{"video_url":"https://cdn.volces.com/upstream.mp4"}}`),
 			}
 			raw, err := (&TaskAdaptor{}).ConvertToOpenAIVideo(task)
 			if err != nil {
@@ -103,9 +100,10 @@ func TestConvertToOpenAIVideoSelectsPublicURLByChannelAndGroup(t *testing.T) {
 	}
 }
 
-func TestConvertToOpenAIVideoChannel106PlgScrubsFailure(t *testing.T) {
+func TestConvertToOpenAIVideoScrubsFailure(t *testing.T) {
 	task := &model.Task{
 		TaskID:    "task_failed",
+		Platform:  constant.TaskPlatform("54"),
 		ChannelId: 106,
 		Group:     "plg",
 		Status:    model.TaskStatusFailure,

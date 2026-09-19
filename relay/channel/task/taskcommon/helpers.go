@@ -21,6 +21,7 @@ import (
 // new-api proxy URL; the real upstream URL is preserved inside task.Data
 // and only resolved server-side by controller.VideoProxy.
 var whitelabelChannels = map[int]struct{}{
+	constant.ChannelTypeDoubaoVideo:      {},
 	constant.ChannelTypeKuaiziLizhen:     {},
 	constant.ChannelTypeBlockRunVideo:    {},
 	constant.ChannelTypeBlockRunSeedance: {},

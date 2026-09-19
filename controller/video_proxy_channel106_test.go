@@ -65,24 +65,24 @@ func TestVideoProxyChannel106UsesPersistedUpstreamURLInsteadOfFlatkeyResultURL(t
 	require.Zero(t, flatkeyHits.Load())
 }
 
-func TestVideoProxyNon106DoubaoChannelKeepsUsingResultURL(t *testing.T) {
+func TestVideoProxyNon106DoubaoChannelUsesPersistedUpstreamURL(t *testing.T) {
 	restoreDB := useVideoProxyDBForTest(t)
 	defer restoreDB()
 	restoreFetchSetting := allowPrivateVideoProxyURLsForTest(t)
 	defer restoreFetchSetting()
 	service.InitHttpClient()
 
-	var resultHits atomic.Int32
+	var flatkeyHits atomic.Int32
 	result := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resultHits.Add(1)
-		_, _ = w.Write([]byte("existing-result-url"))
+		flatkeyHits.Add(1)
+		http.Error(w, "recursive Flatkey content request", http.StatusLoopDetected)
 	}))
 	defer result.Close()
 
 	var dataURLHits atomic.Int32
 	dataURL := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		dataURLHits.Add(1)
-		_, _ = w.Write([]byte("unexpected-data-url"))
+		_, _ = w.Write([]byte("persisted-upstream-video"))
 	}))
 	defer dataURL.Close()
 
@@ -108,9 +108,9 @@ func TestVideoProxyNon106DoubaoChannelKeepsUsingResultURL(t *testing.T) {
 	VideoProxy(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, "existing-result-url", recorder.Body.String())
-	require.EqualValues(t, 1, resultHits.Load())
-	require.Zero(t, dataURLHits.Load())
+	require.Equal(t, "persisted-upstream-video", recorder.Body.String())
+	require.Zero(t, flatkeyHits.Load())
+	require.EqualValues(t, 1, dataURLHits.Load())
 }
 
 func allowPrivateVideoProxyURLsForTest(t *testing.T) func() {
