@@ -100,5 +100,6 @@ func RunDataTool(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	result.Tool = service.PublicDataToolID(result.Tool)
 	common.ApiSuccess(c, result)
 }

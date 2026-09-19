@@ -265,8 +265,14 @@ func ListDataTools(
 	if err != nil {
 		return nil, err
 	}
+	platform = UpstreamDataToolPlatform(platform)
 	if directDataToolsEnabled(url) {
-		return listDirectDataTools(ctx, query, platform, page, pageSize)
+		list, err := listDirectDataTools(ctx, query, platform, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		whitelabelDataToolList(list)
+		return list, nil
 	}
 	arguments := map[string]any{
 		"page":     page,
@@ -289,6 +295,7 @@ func ListDataTools(
 	for index := range result.Tools {
 		result.Tools[index].FlatkeyPriceUSD = DataToolCatalogPriceUSD(result.Tools[index].Pricing)
 	}
+	whitelabelDataToolList(&result)
 	return &result, nil
 }
 
@@ -297,14 +304,21 @@ func InspectDataTool(ctx context.Context, toolID string) (*DataToolInspection, e
 	if err != nil {
 		return nil, err
 	}
+	toolID = UpstreamDataToolID(toolID)
 	if directDataToolsEnabled(url) {
-		return inspectDirectDataTool(ctx, toolID)
+		inspection, err := inspectDirectDataTool(ctx, toolID)
+		if err != nil {
+			return nil, err
+		}
+		whitelabelDataToolInspection(inspection)
+		return inspection, nil
 	}
 	var result DataToolInspection
 	if err := callDataToolsMCP(ctx, "inspect", map[string]any{"id": toolID}, "", &result); err != nil {
 		return nil, err
 	}
 	result.FlatkeyPriceUSD = DataToolCatalogPriceUSD(result.Pricing)
+	whitelabelDataToolInspection(&result)
 	return &result, nil
 }
 

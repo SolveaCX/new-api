@@ -81,7 +81,7 @@ func ExecuteDataTool(
 	input map[string]any,
 ) (*DataToolRunResult, error) {
 	clientIdempotencyKey = strings.TrimSpace(clientIdempotencyKey)
-	toolID = strings.TrimSpace(toolID)
+	toolID = UpstreamDataToolID(toolID)
 	if billing.UserID <= 0 || clientIdempotencyKey == "" || toolID == "" {
 		return nil, errors.New("user, idempotency key and tool id are required")
 	}
