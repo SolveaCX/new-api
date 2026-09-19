@@ -1,6 +1,7 @@
 package doubao
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -43,6 +45,47 @@ func newRelayInfo() *relaycommon.RelayInfo {
 
 func ptrInt(i int) *int    { return &i }
 func ptrBool(b bool) *bool { return &b }
+
+func TestValidateRequestAndSetActionRejectsDurationBelowMinimum(t *testing.T) {
+	if err := i18n.Init(); err != nil {
+		t.Fatalf("initialize i18n: %v", err)
+	}
+	a := &TaskAdaptor{}
+	c := newJSONCtx(`{
+		"model":"seedance-2.0-pro",
+		"content":[{"type":"text","text":"太阳升起"}],
+		"duration":3,
+		"generate_audio":true
+	}`)
+
+	taskErr := a.ValidateRequestAndSetAction(c, newRelayInfo())
+	if taskErr == nil {
+		t.Fatal("expected duration validation error")
+	}
+	if taskErr.Code != "invalid_request" || taskErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("task error = %+v, want invalid_request/400", taskErr)
+	}
+	if taskErr.Message != "Duration must be -1 or at least 4 seconds" {
+		t.Fatalf("message = %q", taskErr.Message)
+	}
+}
+
+func TestValidateRequestAndSetActionAllowsSupportedDurationBoundary(t *testing.T) {
+	for _, duration := range []int{-1, 4} {
+		t.Run(fmt.Sprintf("duration_%d", duration), func(t *testing.T) {
+			a := &TaskAdaptor{}
+			c := newJSONCtx(fmt.Sprintf(`{
+				"model":"seedance-2.0-pro",
+				"content":[{"type":"text","text":"太阳升起"}],
+				"duration":%d
+			}`, duration))
+
+			if taskErr := a.ValidateRequestAndSetAction(c, newRelayInfo()); taskErr != nil {
+				t.Fatalf("unexpected task error: %+v", taskErr)
+			}
+		})
+	}
+}
 
 func TestExtractUpstreamVideoURL(t *testing.T) {
 	for _, tc := range []struct {

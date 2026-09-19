@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -169,8 +170,16 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 // action. The body stays reusable so BuildRequestBody / EstimateBilling can
 // re-read it. No more legacy prompt/images/metadata inbound shape.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
-	if _, err := taskcommon.BindSeedanceRequest(c, info, constant.TaskActionGenerate); err != nil {
+	seedReq, err := taskcommon.BindSeedanceRequest(c, info, constant.TaskActionGenerate)
+	if err != nil {
 		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	if seedReq.Duration != nil && *seedReq.Duration != -1 && *seedReq.Duration < 4 {
+		return service.TaskErrorWrapperLocal(
+			fmt.Errorf("%s", i18n.T(c, i18n.MsgVideoDurationTooShort)),
+			"invalid_request",
+			http.StatusBadRequest,
+		)
 	}
 	return nil
 }

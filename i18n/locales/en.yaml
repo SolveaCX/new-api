@@ -323,6 +323,9 @@ user.create_default_token_error: "Failed to create default token"
 common.uuid_duplicate: "Please retry, the system generated a duplicate UUID!"
 common.invalid_input: "Invalid input"
 
+# Video request messages
+video.duration_too_short: "Duration must be -1 or at least 4 seconds"
+
 # Distributor messages
 distributor.invalid_request: "Invalid request: {{.Error}}"
 distributor.invalid_channel_id: "Invalid channel ID"

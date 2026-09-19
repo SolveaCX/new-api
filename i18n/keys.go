@@ -83,6 +83,11 @@ const (
 	MsgTempMediaUploadFailed     = "temp_media.upload_failed"
 )
 
+// Video request messages
+const (
+	MsgVideoDurationTooShort = "video.duration_too_short"
+)
+
 // Website featured model messages
 const (
 	MsgWebsiteFeaturedInlineImageTooLarge = "website_featured.inline_image_too_large"

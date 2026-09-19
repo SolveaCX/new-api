@@ -323,6 +323,9 @@ user.create_default_token_error: "Falha ao criar token padrão"
 common.uuid_duplicate: "Tente novamente; o sistema gerou um UUID duplicado!"
 common.invalid_input: "Entrada inválida"
 
+# Video request messages
+video.duration_too_short: "A duração deve ser -1 ou de pelo menos 4 segundos"
+
 # Distributor messages
 distributor.invalid_request: "Solicitação inválida: {{.Error}}"
 distributor.invalid_channel_id: "ID de canal inválido"

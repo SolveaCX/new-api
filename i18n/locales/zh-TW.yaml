@@ -323,6 +323,9 @@ user.create_default_token_error: "建立預設令牌失敗"
 common.uuid_duplicate: "請重試，系統生成的 UUID 竟然重複了！"
 common.invalid_input: "輸入不合法"
 
+# Video request messages
+video.duration_too_short: "duration 必須為 -1 或至少 4 秒"
+
 # Distributor messages
 distributor.invalid_request: "無效的請求，{{.Error}}"
 distributor.invalid_channel_id: "無效的管道 Id"
