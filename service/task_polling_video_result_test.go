@@ -115,7 +115,7 @@ func TestUpdateVideoSingleTaskGrokPollingPassesOriginChannelID(t *testing.T) {
 	require.Empty(t, adaptor.fetchKey, "Grok polling must not use the stored channel key as OAuth")
 }
 
-func TestUpdateVideoSingleTaskChannel106ResultURLPolicy(t *testing.T) {
+func TestUpdateVideoSingleTaskDoubaoAlwaysPersistsProxyURL(t *testing.T) {
 	tests := []struct {
 		name  string
 		group string
@@ -129,10 +129,10 @@ func TestUpdateVideoSingleTaskChannel106ResultURLPolicy(t *testing.T) {
 			},
 		},
 		{
-			name:  "non-plg persists upstream URL",
+			name:  "non-plg persists proxy URL",
 			group: "default",
-			want: func(_, upstreamURL string) string {
-				return upstreamURL
+			want: func(taskID, _ string) string {
+				return taskcommon.BuildProxyURL(taskID)
 			},
 		},
 	}

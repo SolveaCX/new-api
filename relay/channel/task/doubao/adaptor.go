@@ -537,10 +537,7 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.TaskID = originTask.TaskID
 	openAIVideo.Status = originTask.Status.ToVideoStatus()
 	openAIVideo.SetProgressStr(originTask.Progress)
-	publicURL := dResp.Content.VideoURL
-	if taskcommon.ShouldProxyResultURL(originTask.ChannelId, originTask.Group) {
-		publicURL = taskcommon.PublicResultURL(originTask)
-	}
+	publicURL := originTask.GetResultURL()
 	if strings.TrimSpace(publicURL) != "" {
 		openAIVideo.SetMetadata("url", publicURL)
 	}
@@ -551,11 +548,9 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	if dResp.Status == "failed" {
 		message := dResp.Error.Message
 		code := dResp.Error.Code
-		if taskcommon.ShouldProxyResultURL(originTask.ChannelId, originTask.Group) {
-			code = "upstream_error"
-			if strings.TrimSpace(message) != "" {
-				message = "task failed at upstream provider"
-			}
+		code = "upstream_error"
+		if strings.TrimSpace(message) != "" {
+			message = "task failed at upstream provider"
 		}
 		openAIVideo.Error = &dto.OpenAIVideoError{
 			Message: message,

@@ -173,7 +173,7 @@ func TestTaskModel2Dto_Channel106PlgFailureScrubsWithoutResultURL(t *testing.T) 
 	}
 }
 
-func TestTaskModel2Dto_Channel106NonPlgKeepsUpstreamFields(t *testing.T) {
+func TestTaskModel2Dto_DoubaoUsesPersistedProxyAndHidesUpstreamFields(t *testing.T) {
 	task := &model.Task{
 		TaskID:    "task_106_default",
 		Platform:  constant.TaskPlatform("54"),
@@ -184,18 +184,18 @@ func TestTaskModel2Dto_Channel106NonPlgKeepsUpstreamFields(t *testing.T) {
 			UpstreamModelName: "doubao-seedance-private",
 			OriginModelName:   "seedance-2.0",
 		},
-		PrivateData: model.TaskPrivateData{ResultURL: "https://cdn.volces.com/upstream.mp4"},
+		PrivateData: model.TaskPrivateData{ResultURL: "https://router.flatkey.ai/v1/videos/task_106_default/content"},
 		Data:        json.RawMessage(`{"content":{"video_url":"https://cdn.volces.com/upstream.mp4"}}`),
 	}
 
 	d := TaskModel2Dto(task)
-	if d.Data == nil {
-		t.Fatal("non-plg task must keep upstream Data")
+	if d.Data != nil {
+		t.Fatalf("Doubao task must hide upstream Data, got %s", d.Data)
 	}
-	if d.Properties.(model.Properties).UpstreamModelName != "doubao-seedance-private" {
+	if d.Properties.(model.Properties).UpstreamModelName != "" {
 		t.Fatalf("properties = %+v", d.Properties)
 	}
-	if d.ResultURL != "https://cdn.volces.com/upstream.mp4" {
+	if d.ResultURL != "https://router.flatkey.ai/v1/videos/task_106_default/content" {
 		t.Fatalf("ResultURL = %q", d.ResultURL)
 	}
 }
@@ -224,17 +224,14 @@ func TestTaskModel2DtoAdmin_Channel106PlgKeepsRawPayload(t *testing.T) {
 	}
 }
 
-func TestGenerationTaskRespBody_Channel106PlgUsesPublicURL(t *testing.T) {
-	originalServerAddress := system_setting.ServerAddress
-	t.Cleanup(func() { system_setting.ServerAddress = originalServerAddress })
-	system_setting.ServerAddress = "https://router.flatkey.ai"
-
+func TestGenerationTaskRespBody_DoubaoUsesPersistedProxyURL(t *testing.T) {
 	task := &model.Task{
-		TaskID:      "task_generation_106",
-		ChannelId:   106,
-		Group:       "plg",
+		TaskID:      "task_generation_doubao",
+		Platform:    constant.TaskPlatform("54"),
+		ChannelId:   282,
+		Group:       "lxytest",
 		Status:      model.TaskStatusSuccess,
-		PrivateData: model.TaskPrivateData{ResultURL: "https://cdn.volces.com/private.mp4"},
+		PrivateData: model.TaskPrivateData{ResultURL: "https://router.flatkey.ai/v1/videos/task_generation_doubao/content"},
 	}
 	out, err := generationTaskRespBody(task)
 	if err != nil {
@@ -250,7 +247,7 @@ func TestGenerationTaskRespBody_Channel106PlgUsesPublicURL(t *testing.T) {
 	if err := common.Unmarshal(out, &got); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if len(got.Content) != 1 || got.Content[0].VideoURL.URL != "https://router.flatkey.ai/v1/videos/task_generation_106/content" {
+	if len(got.Content) != 1 || got.Content[0].VideoURL.URL != "https://router.flatkey.ai/v1/videos/task_generation_doubao/content" {
 		t.Fatalf("content = %+v", got.Content)
 	}
 }

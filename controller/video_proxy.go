@@ -21,7 +21,6 @@ import (
 	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskjimengzhizinan "github.com/QuantumNous/new-api/relay/channel/task/jimengzhizinan"
 	tasksonilo "github.com/QuantumNous/new-api/relay/channel/task/sonilo"
-	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
 	taskxaigrok "github.com/QuantumNous/new-api/relay/channel/task/xaigrok"
 	"github.com/QuantumNous/new-api/service"
@@ -153,11 +152,7 @@ func VideoProxy(c *gin.Context) {
 	case constant.ChannelTypeBlockRunSeedance:
 		videoURL = taskblockrunseedance.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeDoubaoVideo:
-		if channel.Id == 106 || taskcommon.ShouldProxyResultURL(channel.Id, task.Group) {
-			videoURL = taskdoubao.ExtractUpstreamVideoURL(task.Data)
-		} else {
-			videoURL = task.GetResultURL()
-		}
+		videoURL = taskdoubao.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeJimengZhizinan:
 		videoURL = taskjimengzhizinan.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeTechMobiVideo:
