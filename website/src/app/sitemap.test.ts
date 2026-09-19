@@ -70,9 +70,11 @@ describe("sitemap", () => {
       expect(urls).not.toContain("https://flatkey.ai/models/MiniMax-H3");
       expect(urls).toContain("https://flatkey.ai/models/seedance-2.5");
       expect(urls).not.toContain("https://flatkey.ai/models/seedance-2-5");
-      expect(urls).toContain("https://flatkey.ai/models/openai~2Fgpt-image-2.5-flare");
-      expect(urls).toContain("https://flatkey.ai/ja/models/openai~2Fgpt-image-2.5-flare");
+      expect(urls).not.toContain("https://flatkey.ai/models/gpt-5");
+      expect(urls).not.toContain("https://flatkey.ai/models/openai~2Fgpt-image-2.5-flare");
+      expect(urls).not.toContain("https://flatkey.ai/ja/models/openai~2Fgpt-image-2.5-flare");
       expect(urls).not.toContain("https://flatkey.ai/models/openai%2Fgpt-image-2.5-flare");
+      expect(urls).not.toContain("https://flatkey.ai/models/openai~2Fgpt-image-2.5-flare/prompts/product-hero");
       expect(urls).toContain("https://flatkey.ai/models/minimax-h3/prompts/micro-drama-comic");
       expect(urls).toContain("https://flatkey.ai/models/gpt-image-2/prompts/product-hero");
       expect(urls).not.toContain("https://flatkey.ai/models/seedance-api/prompts/micro-drama-comic");
