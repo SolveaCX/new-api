@@ -4,7 +4,7 @@ import { getCachedSitemapData } from "./sitemap-data";
 import { CLI_IMAGE_PATH, CLI_LANDING_PATH, CLI_VIDEO_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
-import { getModelLandingConfigForPricingModel, getModelLandingConfigs, getModelLandingPathnames } from "@/lib/model-landing";
+import { getModelLandingConfigs, getModelLandingPathnames } from "@/lib/model-landing";
 import { getPromptDetailPathnames } from "@/lib/prompt-detail-data";
 import { seriesForModels } from "@/lib/model-directory-meta";
 import { seoIndexableLocales } from "@/lib/seo";
@@ -105,22 +105,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
   );
   const toolsAdLandingEntries = getToolsAdLandingPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly", ["en"]));
-  // Every live model gets its own public page (/models/<name>); include them so
-  // search engines discover the full catalog, not just the curated landings.
-  const landingPaths = new Set(modelLandingPathnames);
-  const modelPublicEntries = pricing.models
-    .flatMap((model) => {
-      // Resolve the same canonical slug used by the detail route. This keeps
-      // casing-only aliases (for example MiniMax-H3) out of the sitemap and
-      // avoids duplicate entries for curated single-model landings.
-      const canonicalPath = `/models/${getModelLandingConfigForPricingModel(model).slug}`;
-      if (REDIRECT_MODEL_LANDING_PATHS.has(canonicalPath) || landingPaths.has(canonicalPath)) return [];
-      return entry(canonicalPath, 0.6, "daily");
-    });
-  const promptDetailEntries = getPromptDetailPathnames([
-    ...getModelLandingConfigs().filter((config) => config.slug !== "seedance-api"),
-    ...pricing.models.map(getModelLandingConfigForPricingModel),
-  ]).flatMap((pathname) => entry(pathname, 0.64, "monthly"));
+  // Only advertise stable, curated model routes. Live catalog models can be
+  // removed between the sitemap's five-minute snapshot and a detail request;
+  // in a multi-node deployment that produced sitemap URLs which already 404ed
+  // on another instance. The directory still links live catalog detail pages,
+  // while sitemap entries are limited to routes whose existence is defined by
+  // versioned website configuration.
+  const promptDetailEntries = getPromptDetailPathnames(
+    getModelLandingConfigs().filter((config) => config.slug !== "seedance-api"),
+  ).flatMap((pathname) => entry(pathname, 0.64, "monthly"));
   // Market acquisition pages are single-locale (no i18n alternates by design).
   const marketEntries = getMarketPathnames().map((pathname) => ({
     url: `${base}${pathname}`,
@@ -187,7 +180,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...toolsAdLandingEntries,
     ...cliMediaDetailEntries,
     ...promptDetailEntries,
-    ...modelPublicEntries,
     ...seriesEntries,
     ...categoryEntries,
     ...postEntries,
