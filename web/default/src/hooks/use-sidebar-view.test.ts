@@ -29,13 +29,14 @@ const navGroups: NavGroup[] = [
     items: [
       { title: 'Get Started', url: '/quickstart' },
       { title: 'Tool Marketplace', url: '/api-marketplace' },
+      { title: 'Compute Market', url: '/compute/market' },
     ],
   },
   { id: 'admin', title: 'Admin', items: [] },
 ]
 
 describe('filterToolsGroupByRole', () => {
-  test('keeps only Tool Marketplace in the regular user tools group', () => {
+  test('keeps Tool Marketplace and Compute Market in the regular user tools group', () => {
     const filteredGroups = filterToolsGroupByRole(navGroups, ROLE.USER)
     const toolsGroup = filteredGroups.find((group) => group.id === 'tools')
 
@@ -46,6 +47,7 @@ describe('filterToolsGroupByRole', () => {
     ])
     expect(toolsGroup?.items).toMatchObject([
       { title: 'Tool Marketplace', url: '/api-marketplace' },
+      { title: 'Compute Market', url: '/compute/market' },
     ])
   })
 
@@ -59,6 +61,7 @@ describe('filterToolsGroupByRole', () => {
       expect(toolsGroup?.items).toMatchObject([
         { title: 'Get Started', url: '/quickstart' },
         { title: 'Tool Marketplace', url: '/api-marketplace' },
+        { title: 'Compute Market', url: '/compute/market' },
       ])
     }
   )
