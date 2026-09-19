@@ -21,22 +21,38 @@ const (
 
 var dataToolVendorWordPattern = regexp.MustCompile(`(?i)` + upstreamDataToolVendor)
 
-// UpstreamDataToolID maps a client-facing tool id back to the upstream id.
-func UpstreamDataToolID(id string) string {
+// UpstreamDataToolIDCandidates returns the upstream ids to try for a
+// client-facing id, most likely first. Ids come in several shapes
+// ("blockrun.audio.speech", "gateway:monid:blockrun.ai:/api/..."), so the
+// public form is produced by a generic rewrite and reversed by trying the
+// rewritten candidate before the id as given.
+func UpstreamDataToolIDCandidates(id string) []string {
 	id = strings.TrimSpace(id)
-	if strings.HasPrefix(id, publicDataToolVendor+".") {
-		return upstreamDataToolVendor + "." + strings.TrimPrefix(id, publicDataToolVendor+".")
+	mapped := id
+	if strings.HasPrefix(mapped, publicDataToolVendor+".") {
+		mapped = upstreamDataToolVendor + "." + strings.TrimPrefix(mapped, publicDataToolVendor+".")
 	}
-	return id
+	mapped = strings.ReplaceAll(mapped, publicDataToolVendor+".ai", upstreamDataToolVendor+".ai")
+	mapped = strings.ReplaceAll(mapped, ":"+publicDataToolVendor+":", ":"+upstreamDataToolVendor+":")
+	if mapped == id {
+		return []string{id}
+	}
+	return []string{mapped, id}
+}
+
+// UpstreamDataToolID maps a client-facing tool id back to the most likely
+// upstream id (first candidate).
+func UpstreamDataToolID(id string) string {
+	return UpstreamDataToolIDCandidates(id)[0]
 }
 
 // PublicDataToolID maps an upstream tool id to the client-facing id.
 func PublicDataToolID(id string) string {
 	id = strings.TrimSpace(id)
 	if strings.HasPrefix(id, upstreamDataToolVendor+".") {
-		return publicDataToolVendor + "." + strings.TrimPrefix(id, upstreamDataToolVendor+".")
+		id = publicDataToolVendor + "." + strings.TrimPrefix(id, upstreamDataToolVendor+".")
 	}
-	return id
+	return dataToolVendorWordPattern.ReplaceAllString(id, publicDataToolVendor)
 }
 
 // UpstreamDataToolPlatform maps the client-facing platform filter back to the
